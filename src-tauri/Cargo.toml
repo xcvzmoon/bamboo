@@ -1,10 +1,10 @@
 [package]
-name = "create-tauri-app-nuxt"
-description = "Create application using Tauri with Nuxt"
+name = "bamboo"
+description = "Desktop app for running headless browser jobs"
 version = "0.0.0"
 authors = ["Mon Albert Gamil <mrgamilmonalbert@gmail.com>"]
 license = "MIT"
-repository = "https://github.com/xcvzmoon/create-tauri-app-nuxt"
+repository = "https://github.com/xcvzmoon/bamboo"
 edition = "2024"
 rust-version = "1.90"
 

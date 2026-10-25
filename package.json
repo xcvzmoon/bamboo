@@ -1,6 +1,6 @@
 {
-  "name": "create-tauri-app-nuxt",
-  "description": "Create application using Tauri with Nuxt",
+  "name": "bamboo",
+  "description": "Desktop app for running headless browser jobs",
   "version": "0.0.0",
   "type": "module",
   "private": true,

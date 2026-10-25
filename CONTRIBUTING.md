@@ -1,11 +1,11 @@
-# Contributing to create-tauri-app-nuxt
+# Contributing to bamboo
 
 Thanks for contributing. This guide covers setup, checks, and pull requests. Please also follow the [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## Ways to contribute
 
-- Report bugs through the [bug report template](https://github.com/xcvzmoon/create-tauri-app-nuxt/issues/new/choose).
-- Suggest features through the [feature request template](https://github.com/xcvzmoon/create-tauri-app-nuxt/issues/new/choose).
+- Report bugs through the [bug report template](https://github.com/xcvzmoon/bamboo/issues/new/choose).
+- Suggest features through the [feature request template](https://github.com/xcvzmoon/bamboo/issues/new/choose).
 - Report vulnerabilities privately using the process in [SECURITY.md](./SECURITY.md).
 - Send focused code or documentation changes. For larger changes, open an issue first to discuss the approach.
 

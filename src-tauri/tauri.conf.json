@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "create-tauri-app-nuxt",
+  "productName": "bamboo",
   "version": "0.0.0",
-  "identifier": "com.create-tauri-app-nuxt.dev",
+  "identifier": "com.bamboo.dev",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:65432",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "create-tauri-app-nuxt",
+        "title": "bamboo",
         "width": 800,
         "height": 600,
         "resizable": true,
@@ -35,7 +35,7 @@
           "/System/Applications/**",
           "/System/Library/CoreServices/**",
           "$HOME/Applications/**",
-          "$HOME/Library/Caches/com.create-tauri-app-nuxt.dev/**"
+          "$HOME/Library/Caches/com.bamboo.dev/**"
         ]
       }
     },

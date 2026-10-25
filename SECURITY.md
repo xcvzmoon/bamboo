@@ -8,7 +8,7 @@ Security fixes are made against the latest commit on `main`. There is no long-te
 
 ## Reporting a vulnerability
 
-Do not open a public issue. Use [GitHub Security Advisories](https://github.com/xcvzmoon/create-tauri-app-nuxt/security/advisories/new) to send a private report to the maintainers.
+Do not open a public issue. Use [GitHub Security Advisories](https://github.com/xcvzmoon/bamboo/security/advisories/new) to send a private report to the maintainers.
 
 Include the affected component (`app`, `src-tauri`, or build tooling), steps to reproduce, the impact, and any conditions needed to trigger the issue. A proof of concept is helpful when available.
 

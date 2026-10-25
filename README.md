@@ -1,14 +1,14 @@
-# create-tauri-app-nuxt
+# bamboo
 
-[![CI](https://github.com/xcvzmoon/create-tauri-app-nuxt/actions/workflows/ci.yaml/badge.svg)](https://github.com/xcvzmoon/create-tauri-app-nuxt/actions/workflows/ci.yaml)
-[![Release](https://github.com/xcvzmoon/create-tauri-app-nuxt/actions/workflows/release.yaml/badge.svg)](https://github.com/xcvzmoon/create-tauri-app-nuxt/actions/workflows/release.yaml)
+[![CI](https://github.com/xcvzmoon/bamboo/actions/workflows/ci.yaml/badge.svg)](https://github.com/xcvzmoon/bamboo/actions/workflows/ci.yaml)
+[![Release](https://github.com/xcvzmoon/bamboo/actions/workflows/release.yaml/badge.svg)](https://github.com/xcvzmoon/bamboo/actions/workflows/release.yaml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.md)
 
 **Your next desktop app starts here.**
 
 Build with Vue. Style with Tailwind. Add native capabilities with Rust. This template brings Nuxt 4 and Tauri 2 together with a themed app shell, UI components, and development tooling already connected, so you can get straight to your app.
 
-[Use this template](https://github.com/xcvzmoon/create-tauri-app-nuxt/generate) · [Get started](#get-started) · [Choose a package manager](#use-bun-npm-or-yarn)
+[Use this template](https://github.com/xcvzmoon/bamboo/generate) · [Get started](#get-started) · [Choose a package manager](#use-bun-npm-or-yarn)
 
 ## What's inside
 
@@ -36,10 +36,10 @@ Keep Node.js installed when using Bun too; the template's tooling includes Node-
 
 ### 2. Create your project
 
-Choose [Use this template](https://github.com/xcvzmoon/create-tauri-app-nuxt/generate) on GitHub to create your own repository, then clone it. To try this starter directly:
+Choose [Use this template](https://github.com/xcvzmoon/bamboo/generate) on GitHub to create your own repository, then clone it. To try this starter directly:
 
 ```bash
-git clone https://github.com/xcvzmoon/create-tauri-app-nuxt.git my-desktop-app
+git clone https://github.com/xcvzmoon/bamboo.git my-desktop-app
 cd my-desktop-app
 ```
 

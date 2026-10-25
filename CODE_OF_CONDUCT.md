@@ -2,7 +2,7 @@
 
 ## Our Pledge
 
-We as members, contributors, and leaders pledge to make participation in the create-tauri-app-nuxt community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
+We as members, contributors, and leaders pledge to make participation in the bamboo community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
 
 We pledge to act and interact in ways that contribute to an open, welcoming, diverse, inclusive, and healthy community.
 
@@ -32,7 +32,7 @@ Maintainers have the right and responsibility to remove, edit, or reject comment
 
 ## Scope
 
-This Code of Conduct applies within all project spaces (issues, pull requests, discussions, code review, and any other create-tauri-app-nuxt-maintained communication channel), and also applies when an individual is officially representing the project in public spaces.
+This Code of Conduct applies within all project spaces (issues, pull requests, discussions, code review, and any other bamboo-maintained communication channel), and also applies when an individual is officially representing the project in public spaces.
 
 ## Enforcement
 
