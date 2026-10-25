@@ -1,0 +1,10 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Security Vulnerability
+    url: https://github.com/xcvzmoon/create-tauri-app-nuxt/security/advisories/new
+    about: Report security issues privately through GitHub Security Advisories.
+
+  - name: Question or Discussion
+    url: https://github.com/xcvzmoon/create-tauri-app-nuxt/discussions
+    about: Ask questions and discuss ideas.

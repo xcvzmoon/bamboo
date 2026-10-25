@@ -1,0 +1,58 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "create-tauri-app-nuxt",
+  "version": "0.0.0",
+  "identifier": "com.create-tauri-app-nuxt.dev",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:65432",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm nuxt:generate"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "create-tauri-app-nuxt",
+        "width": 800,
+        "height": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": {
+          "x": 13,
+          "y": 21
+        }
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "/Applications/**",
+          "/System/Applications/**",
+          "/System/Library/CoreServices/**",
+          "$HOME/Applications/**",
+          "$HOME/Library/Caches/com.create-tauri-app-nuxt.dev/**"
+        ]
+      }
+    },
+    "macOSPrivateApi": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  }
+}

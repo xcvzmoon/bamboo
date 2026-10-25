@@ -1,0 +1,42 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: format
+      glob: '*.{ts,vue,css,json,md,yaml}'
+      run: pnpm oxc:fmt {staged_files}
+      exclude:
+        - '.agents/**'
+        - 'tools/oxlint/anti-slop/**'
+        - 'app/components/ui/**'
+        - 'CHANGELOG.md'
+      stage_fixed: true
+
+    - name: lint
+      glob: '*.{ts,vue}'
+      exclude:
+        - '.agents/**'
+        - 'tools/oxlint/anti-slop/**'
+        - 'app/components/ui/**'
+      run: pnpm oxc:lint {staged_files}
+
+    - name: rust-format
+      glob:
+        - 'src-tauri/*.rs'
+        - 'src-tauri/**/*.rs'
+      run: pnpm cargo:check
+
+    - name: rust-lint
+      glob:
+        - 'src-tauri/*.rs'
+        - 'src-tauri/**/*.rs'
+        - 'src-tauri/Cargo.{toml,lock}'
+      run: pnpm cargo:lint
+
+pre-push:
+  parallel: true
+  jobs:
+    - name: check
+      run: pnpm check
+
+    - name: typecheck
+      run: pnpm typecheck

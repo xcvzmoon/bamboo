@@ -1,0 +1,4 @@
+interface:
+  display_name: "xcvzmoon Code Conventions"
+  short_description: "Apply focused TypeScript repository conventions"
+  default_prompt: "Use $xcvzmoon-code-conventions while implementing this change."
