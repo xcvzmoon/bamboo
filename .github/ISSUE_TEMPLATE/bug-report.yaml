@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a defect or unexpected behavior in the Create Tauri App Nuxt
+description: Report a defect or unexpected behavior in the Bamboo
 title: 'bug: '
 labels: ['bug']
 body:
@@ -15,7 +15,7 @@ body:
       options:
         - label: I have searched the existing issues and this bug has not been reported yet.
           required: true
-        - label: I am running the latest version of create-tauri-app-nuxt.
+        - label: I am running the latest version of bamboo.
           required: false
 
   - type: dropdown
