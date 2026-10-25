@@ -4,7 +4,7 @@ Use this template as a decision guide. Keep `Summary` and `Verification`. Add ot
 
 ## Summary
 
-State the problem or capability first. Then state the result and the reason for this approach.
+Start every pull request description with one paragraph of two or three complete sentences before any heading, list, table, or diagram. Explain the problem or capability, resulting behavior, and why the change is needed.
 
 - What user or system behavior changed?
 - Why does this change belong in this PR?
