@@ -5,26 +5,37 @@ Use a Conventional Commit title, such as:
   chore(ci): update action versions
 -->
 
-## Description
+## Summary
 
-<!-- What changed, and why? -->
+<!-- Start every pull request description with one paragraph of two or three complete sentences before any heading, list, table, or diagram. Explain the problem or capability, resulting behavior, and why the change is needed. -->
 
-## Related issues
+- What user or system behavior changed?
+- Why does this change belong in this PR?
+- Is this PR independent or stacked?
 
-<!-- Link related issues. Use "Closes #123" when this PR resolves one. -->
+## Change map
 
-## Type of change
+<!-- Optional: use when the diff changes several modules, responsibilities, or ownership boundaries. -->
 
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Breaking change
-- [ ] Refactor
-- [ ] Build / CI
-- [ ] Documentation
+| Module                 | Before                                  | After                              | Description           |
+| ---------------------- | --------------------------------------- | ---------------------------------- | --------------------- |
+| `<module or boundary>` | `<previous responsibility or behavior>` | `<new responsibility or behavior>` | `<reason and effect>` |
+
+## Architecture and behavior
+
+<!-- Optional: add when a diagram explains the change faster or more accurately than prose. -->
+
+## Boundaries and risks
+
+<!-- Optional: use when the change has meaningful failure modes, invariants, migrations, or external effects. -->
+
+| Invariant or boundary | Failure mode                                                  | Protection                                         | Evidence or gap                               |
+| --------------------- | ------------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------- |
+| `<required behavior>` | `<duplicate, timeout, race, invalid input, or other failure>` | `<guard, ownership rule, transaction, or cleanup>` | `<test, runtime evidence, or unverified gap>` |
 
 ## Verification
 
-<!-- Describe any manual checks and note commands you could not run. -->
+<!-- List exact test, typecheck, lint, and build commands and their results. -->
 
 - [ ] `pnpm fmt`
 - [ ] `pnpm lint`
@@ -34,6 +45,6 @@ Use a Conventional Commit title, such as:
 - [ ] `pnpm build`
 - [ ] Tests and documentation are updated where needed.
 
-## Notes
+## Visual changes
 
-<!-- Add anything reviewers should pay attention to. Delete this section if it does not apply. -->
+<!-- Optional: use for user-visible UI changes with before/after comparison. -->

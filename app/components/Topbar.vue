@@ -7,7 +7,7 @@
     class="flex h-9.25 items-center justify-between border-b ps-21 pe-1.5"
     data-tauri-drag-region
   >
-    <h1 class="text-xs">{{ `Create Tauri App Nuxt v${version}` }}</h1>
+    <h1 class="text-xs">{{ `Bamboo v${version}` }}</h1>
 
     <ColorModeButton
       size="icon-xs"

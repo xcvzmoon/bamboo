@@ -46,6 +46,7 @@ Build a small context brief before you write the PR body. Keep the analysis read
 Use the structure in [the PR body template](references/pr-body.md) as a decision guide. Match the detail to the scope, risk, and review cost.
 
 - Every PR needs a concise `## Summary` and `## Verification` section.
+- Start every pull request description with one paragraph of two or three complete sentences before any heading, list, table, or diagram. Explain the problem or capability, resulting behavior, and why the change is needed.
 - Add `## Change map` when the diff changes several modules, responsibilities, or ownership boundaries.
 - Add `## Architecture and behavior` when a diagram explains the change faster or more accurately than prose.
 - Add `## Boundaries and risks` when the change has meaningful failure modes, invariants, migrations, or external effects.

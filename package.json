@@ -1,6 +1,6 @@
 {
-  "name": "create-tauri-app-nuxt",
-  "description": "Create application using Tauri with Nuxt",
+  "name": "bamboo",
+  "description": "Desktop app for running headless browser jobs",
   "version": "0.0.0",
   "type": "module",
   "private": true,
@@ -33,13 +33,13 @@
     "add-component": "shadcn-vue add"
   },
   "dependencies": {
-    "@lucide/vue": "^1.56.0",
-    "@nuxt/icon": "2.5.1",
+    "@lucide/vue": "1.61.0",
+    "@nuxt/icon": "2.6.0",
     "@vueuse/core": "^15.0.0",
     "@vueuse/nuxt": "15.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "nuxt": "^4.6.1",
+    "nuxt": "^4.6.2",
     "reka-ui": "^2.11.0",
     "shadcn-nuxt": "2.8.2",
     "tailwind-merge": "^3.7.0",
@@ -48,24 +48,31 @@
     "vue-router": "^5.3.1"
   },
   "devDependencies": {
-    "@golar/vue": "^0.1.10",
+    "@golar/vue": "0.1.11",
     "@iconify-json/hugeicons": "^1.2.35",
     "@nuxtjs/color-mode": "^4.0.1",
-    "@oxlint/plugins": "^1.88.0",
+    "@oxlint/plugins": "1.89.0",
     "@tailwindcss/vite": "^4.3.3",
-    "@tauri-apps/cli": "^2.12.2",
+    "@tauri-apps/cli": "2.12.4",
     "@types/node": "^26.6.5",
-    "genbumppush": "^0.0.8",
-    "golar": "^0.1.10",
+    "genbumppush": "0.0.10",
+    "golar": "0.1.11",
     "lefthook": "^2.2.2",
-    "npm-run-all2": "^9.0.3",
-    "oxfmt": "^0.73.0",
-    "oxlint": "^1.88.0",
-    "oxlint-tsgolint": "^7.0.2004",
+    "npm-run-all2": "9.0.4",
+    "oxfmt": "0.74.0",
+    "oxlint": "1.89.0",
+    "oxlint-tsgolint": "7.0.2005",
     "shadcn-vue": "^2.8.2",
     "tailwindcss": "^4.3.3",
     "tauri-nuxt-dev": "^0.0.1",
     "tw-animate-css": "^1.4.0",
     "typescript": "^6.0.3"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.15.0",
+      "onFail": "download"
+    }
   }
 }
