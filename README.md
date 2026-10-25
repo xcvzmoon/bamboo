@@ -28,7 +28,7 @@ The starter screen is deliberately small: a top bar, a theme toggle, and space f
 
 ### 1. Install the prerequisites
 
-- Node.js 26 and pnpm 12.6.0, matching CI. See [other package managers](#use-bun-npm-or-yarn) if you prefer Bun, npm, or Yarn.
+- Node.js 26 and the pnpm version pinned in `package.json` under `devEngines.packageManager`, matching CI. See [other package managers](#use-bun-npm-or-yarn) if you prefer Bun, npm, or Yarn.
 - Rust 1.90 or newer.
 - The [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your operating system, including native build tools and system libraries.
 
@@ -93,7 +93,7 @@ pnpm is the default and the package manager used in CI. To adopt another manager
 
 ### 1. Replace the internal pnpm commands
 
-In `package.json`, replace these two script values:
+In `package.json`, update `devEngines.packageManager` to your chosen manager and its exact installed version. Replace these two script values:
 
 | Script        | Bun                        | npm                        | Yarn                        |
 | ------------- | -------------------------- | -------------------------- | --------------------------- |
@@ -164,7 +164,7 @@ See [Yarn's configuration reference](https://yarnpkg.com/configuration/yarnrc#no
 
 ### 4. Update CI in your project
 
-The shared action at `.github/actions/setup-project/action.yaml` uses `pnpm/setup` to provide pnpm, Node.js, dependency installation, and caching. Replace that step with setup and installation for your chosen manager, keeping Node.js 26 and the Tauri system dependencies.
+The shared action at `.github/actions/setup-project/action.yaml` uses `pnpm/setup` to read the pnpm version from `devEngines.packageManager` in `package.json` and provide Node.js, dependency installation, and caching. Replace that step with setup and installation for your chosen manager, keeping Node.js 26 and the Tauri system dependencies.
 
 Update the pnpm commands in `.github/workflows/ci.yaml` and `.github/workflows/release.yaml` too. In the release workflow, replace `pnpm exec genbumppush` with `bunx genbumppush`, `npm exec -- genbumppush`, or `yarn exec genbumppush`.
 
