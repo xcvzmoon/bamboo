@@ -21,3 +21,4 @@ runs:
       with:
         workspaces: src-tauri -> target
         shared-key: tauri
+        save-if: ${{ github.ref == 'refs/heads/main' }}
