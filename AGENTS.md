@@ -43,11 +43,15 @@ Vue: Composition API + `<script setup>` is the project direction (see `.agents/s
 - **`no-console`**: only `warn`/`error`/`info` allowed
 - **`no-non-null-assertion`** is a warning — avoid `!`; type-aware rules also catch most unsafe patterns
 
+## Skills
+
+Project skills live in `.agents/skills/` and are tracked in `skills-lock.json`. They are vendored agent instructions, not product code. Use relevant skills when loaded (for example `/unslop`, `/grill-me`, `/implement`, `/quality`). Do not rewrite skill folders as part of product features.
+
 ## Editing Guidance
 
 - Make the smallest correct change.
 - Do not polish unrelated code.
-- Do not remove correct comments or documentation.
+- Preserve accurate JSDoc and required tooling directives; remove ordinary comments when touching code.
 - Do not rename broad parts of the codebase unless required.
 - Do not expand a change into a repo-wide refactor unless necessary.
 - Prefer leaving correct existing code in place.
@@ -56,6 +60,8 @@ Vue: Composition API + `<script setup>` is the project direction (see `.agents/s
 ## Formatting And Style
 
 - Match the surrounding file's formatting instead of hand-styling custom layouts.
+- Observe the user's spacing and preserve it in edited code.
+- Always use braces `{ }` for `if` / `else` branches and loops, including single-statement bodies.
 - Prefer `function name()` for named functions and helpers.
 - Do not prefer `const fn = () => {}` for normal top-level helpers.
 - Exception: callbacks should stay as arrows, for example `items.map((item) => item.id)`.
@@ -67,12 +73,12 @@ Vue: Composition API + `<script setup>` is the project direction (see `.agents/s
 ## Types And Naming
 
 - Prefer `type` over `interface`.
-- Avoid `any`; prefer `unknown` and narrow it explicitly but avoid creating isRecord function.
 - Add explicit return types to exported functions and non-trivial helpers.
 - Use string literal unions for small state enums like `'ok' | 'error'`.
 - Keep generics minimal and purposeful.
 - Reuse existing helper types before inventing new ones.
 - Use descriptive names.
+- Always use plural SQL table names and plural table declaration identifiers in every schema, including test fixtures (for example, `users` and `verifications`).
 - Do not abbreviate iterable items; prefer `item`, `entry`, `record`, `status`.
 - Avoid one-letter names except for conventional indexes.
 
@@ -87,9 +93,16 @@ Vue: Composition API + `<script setup>` is the project direction (see `.agents/s
 - Clean up temporary resources in `finally` blocks.
 - Include stable error codes in config validation and app-level failures.
 
-## Skills
+## JSDoc
 
-Project skills live in `.agents/skills/` and are tracked in `skills-lock.json`. They are vendored agent instructions, not product code. Use relevant skills when loaded (for example `/unslop`, `/vue-best-practices`, `/tauri-v2`, `/valibot`). Do not rewrite skill folders as part of product features.
+- Require JSDoc when adding or changing exported functions shared across workspace apps or packages through package entry points or subpath exports. An `export` used only within its own app or package does not require JSDoc.
+- Document internal functions only when callers need an explanation of non-obvious behavior, constraints, or resource ownership.
+- Include a clear description, `@param` entries for each parameter, `@returns`, and a practical `@example`. Document optional parameters and defaults accurately.
+- Add `@throws` for errors that can reach the caller, including stable error codes where applicable. Describe returned failure results under `@returns` instead of treating them as thrown errors.
+- Explain relevant validation requirements, side effects, authorization boundaries, and cleanup responsibilities. Keep existing JSDoc in sync with behavior.
+- In TypeScript, rely on the function signature for types rather than repeating them in JSDoc tags. Use fenced TypeScript examples that match the actual API.
+- Do not add ordinary line or block comments. Preserve required lint directives and `SAFETY:` comments.
+- Apply the `/unslop` skill to JSDoc text.
 
 ## Agents
 
@@ -100,8 +113,9 @@ Project skills live in `.agents/skills/` and are tracked in `skills-lock.json`. 
 - Separate independent modules and concerns, including SQL table renames, declaration renames, dependency cleanup, lint rules, tests, and documentation. Keep imports, types, call sites, and tests together when they are required for a change to work.
 - Stage explicit paths or hunks. If a file contains several independent changes, stage each change separately instead of committing the whole file.
 - Review the staged diff before every commit. Split it further if its purpose needs multiple independent actions to describe. Keep each intermediate commit valid.
-- Use a one-line Conventional Commit message for each commit. Do not combine changes just to reduce the number of commits.
+- Do not combine changes just to reduce the number of commits.
 - When ask to create a Pull Request: use the proper template, use skills: `/create-pr-with-evidence` and `/unslop`, do not mention the agentic model used, assign to me, and add proper labels.
+- Start every pull request description with one paragraph of two or three complete sentences before any heading, list, table, or diagram. Explain the problem or capability, resulting behavior, and why the change is needed. Check this before creating or updating a pull request.
 - Do not preserve backward compatibility. Remove obsolete paths instead of adding compatibility layers, fallbacks, or migrations.
 - Choose the simplest implementation that fully meets the current requirements. Avoid speculative abstractions, configuration, and indirection.
 - Grow the system in layers. Start from the smallest version that works end to end, and add each new capability on top of a product that already works. Never trade a working product for unfinished complexity.
@@ -110,4 +124,3 @@ Project skills live in `.agents/skills/` and are tracked in `skills-lock.json`. 
 - Lean on the dependencies already in the project before writing your own implementation or adding packages. Do not assume a library lacks a capability without checking its documentation and types.
 - Make architectural decisions for the long term. Do not accept a stopgap that only works for now and is meant to be replaced later.
 - If you need a paragraph-long comment to justify why the workaround is OK, the code is wrong so fix the code.
-- Always use the unslop skill `/unslop` when generating texts as well as in adding jsdocs/tsdocs or just comments.
