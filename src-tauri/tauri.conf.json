@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:65432",
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm nuxt:generate"
+    "beforeDevCommand": "pnpm runner:package && pnpm dev",
+    "beforeBuildCommand": "pnpm runner:package && pnpm nuxt:generate"
   },
   "app": {
     "windows": [
@@ -53,6 +53,9 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    },
+    "resources": {
+      "resources/runner/": "runner/"
     }
   }
 }

@@ -8,8 +8,6 @@ repository = "https://github.com/xcvzmoon/bamboo"
 edition = "2024"
 rust-version = "1.90"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -23,3 +21,28 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.12.0", features = ["macos-private-api", "protocol-asset"] }
 tauri-plugin-log = "2"
+rusqlite = { version = "0.41.0", features = ["bundled", "serde_json"] }
+sha2 = "0.11.1"
+uuid = { version = "1.29.0", features = ["v7", "serde"] }
+thiserror = "2.0.21"
+tempfile = "3.27.0"
+hex = "0.4.3"
+tokio = { version = "1.54.1", features = [
+  "process",
+  "time",
+  "rt-multi-thread",
+  "sync",
+  "macros",
+  "net",
+  "io-util",
+] }
+reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
+nix = { version = "0.31.3", features = ["signal", "process"] }
+
+[[test]]
+name = "storage"
+path = "../tests/rust/storage.rs"
+
+[[test]]
+name = "runner"
+path = "../tests/rust/runner.rs"
