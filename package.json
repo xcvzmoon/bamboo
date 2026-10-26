@@ -8,7 +8,7 @@
     "build": "tauri build",
     "dev": "tauri-nuxt-dev",
     "postinstall": "pnpm nuxt:postinstall",
-    "typecheck": "pnpm nuxt:typecheck && tsc -p runner/tsconfig.json && tsc -p tests/tsconfig.json && tsc -p tools/tsconfig.json",
+    "typecheck": "pnpm nuxt:typecheck && tsc -p tools/probes/tsconfig.json && tsc -p runner/tsconfig.json && tsc -p tests/tsconfig.json && tsc -p tools/tsconfig.json",
     "fmt": "run-p oxc:fmt cargo:fmt",
     "lint": "run-p oxc:lint cargo:lint",
     "check": "run-p oxc:check cargo:check",
@@ -33,6 +33,7 @@
     "nuxt:postinstall": "nuxt prepare",
     "nuxt:typecheck": "nuxt typecheck",
     "add-component": "shadcn-vue add",
+    "probe:runtime": "node tools/probes/lightpanda.ts",
     "runner:job": "node runner/main.ts",
     "runner:package": "node tools/package-runner.ts"
   },
