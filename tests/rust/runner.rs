@@ -82,10 +82,12 @@ impl Fixture {
             import http from 'node:http';
             import fs from 'node:fs';
             if (process.argv[2] === 'version') {{ console.info('fixture-lightpanda'); process.exit(0); }}
-            fs.writeFileSync({}, String(process.pid));
+            const pidFile = {};
+            fs.writeFileSync(pidFile + '.tmp', String(process.pid));
+            fs.renameSync(pidFile + '.tmp', pidFile);
             const mode = {};
             if (mode === 'exit') {{ process.exit(17); }}
-            if (mode === 'ignore-term') {{ process.on('SIGTERM', () => {{}}); }}
+            if (mode === 'ignore-term' || mode === 'resistant-ready') {{ process.on('SIGTERM', () => {{}}); }}
             const port = Number(process.argv[process.argv.indexOf('--port') + 1]);
             http.createServer((_request, response) => {{
               response.writeHead(mode === 'never-ready' || mode === 'ignore-term' ? 503 : 200);
@@ -305,15 +307,27 @@ async fn startup_failure_and_missing_configuration_mark_failure() -> TestResult 
 
 #[tokio::test]
 async fn deadline_kills_a_sigterm_resistant_browser() -> TestResult {
-    let fixture = Fixture::new("process.exit(0)", "ignore-term", Duration::from_secs(2))?;
+    let fixture = Fixture::new(
+        "import fs from 'node:fs'; fs.writeFileSync('runner.started', 'ready'); setInterval(() => {}, 1000)",
+        "resistant-ready",
+        Duration::from_secs(15),
+    )?;
     let started = Instant::now();
-    let run = fixture
-        .supervisor
-        .run(fixture.storage.queue_run(fixture.job_id, &Value::Null)?)
-        .await?;
+    let supervisor = fixture.supervisor.clone();
+    let queued = fixture.storage.queue_run(fixture.job_id, &Value::Null)?;
+    let task = tokio::spawn(async move { supervisor.run(queued).await });
+    let pid_path = fixture.temporary.path().join("browser.pid");
+    timeout(Duration::from_secs(12), async {
+        while !pid_path.is_file() || !fixture.project.join("runner.started").is_file() {
+            sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await?;
+    let pid = fixture.browser_pid()?;
+    let run = task.await??;
     assert_eq!(code(&run), Some("RUN_TIMEOUT"));
-    assert!(started.elapsed() < Duration::from_secs(8));
-    assert_gone(fixture.browser_pid()?).await?;
+    assert!(started.elapsed() < Duration::from_secs(25));
+    assert_gone(pid).await?;
     Ok(())
 }
 
