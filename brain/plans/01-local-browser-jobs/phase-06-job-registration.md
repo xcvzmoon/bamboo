@@ -28,3 +28,12 @@ Expose narrow Rust commands for selecting/registering a project and entry, namin
 - Static: follow the ordered repository checks in [[plans/01-local-browser-jobs/testing]].
 - Runtime: Register the Wikipedia example, restart the app, and run the saved job. Invalid JSON, absent entry files, and paths containing spaces receive actionable errors. Follow repository Vue and TypeScript skills.
 - Add focused behavioral tests for state transitions and failure boundaries; no module mocking.
+
+## Progress (2026-10-26)
+
+- Added job listing, registration, saved settings and native project/entry selection commands.
+- Added runtime path setup, registration and saved-job controls to the app. Manual runs accept edited JSON input; saved timeout changes require saving settings first.
+- Added JSON/timeout boundary tests and a persistence test covering restart and queued snapshot preservation.
+- Verification passed: `pnpm check` → `pnpm typecheck` → `pnpm test` → `pnpm build`, focused web lint and Cargo Clippy. Real Lightpanda/Wikipedia checks passed (14 tests), plus the supervisor fixture using packaged app runner assets.
+- Desktop picker interaction and registering/running Wikipedia through the UI still need manual acceptance.
+- Next implementation layer: [[plans/01-local-browser-jobs/phase-07-results-export]].
