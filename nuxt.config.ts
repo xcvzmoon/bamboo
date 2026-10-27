@@ -33,7 +33,14 @@ export default defineNuxtConfig({
       },
     },
     optimizeDeps: {
-      include: ['class-variance-authority', 'clsx', 'reka-ui', 'tailwind-merge'],
+      include: [
+        '@tauri-apps/api/core',
+        'class-variance-authority',
+        'clsx',
+        'reka-ui',
+        'tailwind-merge',
+        'valibot',
+      ],
     },
     plugins: [tailwindcss()],
   },
