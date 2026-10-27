@@ -5,6 +5,7 @@
   "type": "module",
   "files": [
     "main.ts",
+    "guard.ts",
     "job.ts",
     "protocol.ts"
   ],
