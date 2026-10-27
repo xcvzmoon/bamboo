@@ -20,21 +20,24 @@ defineConfig({
   test: {
     coverage: {
       // Provider: 'v8' (default, faster) or 'istanbul' (more compatible)
-      provider: "v8",
-
+      provider: 'v8',
+      
       // Enable coverage
       enabled: true,
-
+      
       // Reporters
-      reporter: ["text", "json", "html"],
-
+      reporter: ['text', 'json', 'html'],
+      
       // v4: define `include` to report uncovered files too.
       // Without it, only files loaded during the run are reported.
-      include: ["src/**/*.{ts,tsx}"],
-
+      include: ['src/**/*.{ts,tsx}'],
+      
       // Exclusion is applied to files matched by `include`
-      exclude: ["**/*.d.ts", "**/*.test.ts"],
-
+      exclude: [
+        '**/*.d.ts',
+        '**/*.test.ts',
+      ],
+      
       // Thresholds
       thresholds: {
         lines: 80,
@@ -42,9 +45,13 @@ defineConfig({
         branches: 80,
         statements: 80,
       },
+
+      // v5 (v8 only): also cover node:child_process / node:worker_threads
+      // spawned during the run (adds overhead via NODE_V8_COVERAGE)
+      autoAttachSubprocess: false,
     },
   },
-});
+})
 ```
 
 ## Providers
@@ -98,11 +105,12 @@ coverage: {
     functions: 75,
     branches: 70,
     statements: 80,
-
+    
     // Per-file thresholds
     perFile: true,
-
+    
     // Auto-update thresholds (for gradual improvement)
+    // v5: a function receives (newThreshold, previousThreshold)
     autoUpdate: true,
 
     // v5: glob thresholds no longer inherit top-level `perFile` — set it per glob
@@ -118,7 +126,7 @@ coverage: {
 ```ts
 /* v8 ignore next -- @preserve */
 function ignored() {
-  return "not covered";
+  return 'not covered'
 }
 
 /* v8 ignore start -- @preserve */
@@ -190,6 +198,13 @@ vitest run --shard=3/3 --coverage --reporter=blob
 vitest --merge-reports --coverage --reporter=json
 ```
 
+## v5 Changes
+
+- **`include`/`exclude` match relative paths** (not absolute-with-`contains`), so patterns catch fewer files than v4 — a wildcard-free pattern like `'src'` means `src/**`. Re-verify the reported file set after upgrading.
+- **Glob thresholds don't inherit top-level `perFile`** — set `perFile` on each glob that needs it.
+- **`coverage.autoAttachSubprocess`** (v8) tracks child-process/worker-thread coverage.
+- **Istanbul moved to the maintained [`@vitest/istanbuljs`](https://github.com/vitest-dev/istanbuljs) fork**; the v8 provider merges reports with bounded memory.
+
 ## v4 Changes
 
 - **`coverage.all` and `coverage.extensions` removed** — only covered files are reported unless `coverage.include` is set.
@@ -205,7 +220,7 @@ vitest --merge-reports --coverage --reporter=json
 - Set thresholds to enforce minimum coverage
 - Use `@preserve` comment to keep ignore hints (e.g. `/* v8 ignore next -- @preserve */`)
 
-<!--
+<!-- 
 Source references:
 - https://vitest.dev/guide/coverage.html
 -->

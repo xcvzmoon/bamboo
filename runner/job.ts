@@ -1,6 +1,6 @@
 import type { Browser, BrowserContext } from 'playwright-core';
-import { realpath } from 'node:fs/promises';
-import { extname } from 'node:path';
+import { realpath, writeFile } from 'node:fs/promises';
+import { extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { tsImport } from 'tsx/esm/api';
 import * as v from 'valibot';
@@ -13,6 +13,15 @@ export type JobContext = {
   context: BrowserContext;
   input: JsonValue;
 };
+export class AuthenticationRequiredError extends Error {
+  readonly code = 'AUTHENTICATION_REQUIRED';
+
+  constructor() {
+    super('Saved login requires refresh');
+    this.name = 'AuthenticationRequiredError';
+  }
+}
+
 export type Job = (context: JobContext) => Promise<JobResult>;
 
 const jobModuleSchema = v.object({ default: v.function() });
@@ -59,11 +68,41 @@ export async function loadJob(entryPath: string): Promise<Job> {
   };
 }
 
-export async function executeJob(job: Job, browser: Browser, input: JsonValue): Promise<JobResult> {
-  const context = await browser.newContext();
+export async function executeJob(
+  job: Job,
+  browser: Browser,
+  input: JsonValue,
+  profileDirectory?: string,
+): Promise<JobResult> {
+  let context: BrowserContext;
+  try {
+    context = await browser.newContext(
+      profileDirectory === undefined
+        ? {}
+        : {
+            storageState: join(profileDirectory, 'profile.json'),
+          },
+    );
+  } catch (error) {
+    if (profileDirectory === undefined) {
+      throw error;
+    }
+    throw Object.assign(new Error('Could not restore saved login profile'), {
+      code: 'PROFILE_STATE' as const,
+    });
+  }
 
   try {
-    return await job({ context, input });
+    const records = await job({ context, input });
+    if (profileDirectory !== undefined) {
+      const state = await context.storageState({ indexedDB: true });
+      await writeFile(join(profileDirectory, 'candidate.json'), JSON.stringify(state), {
+        mode: 0o600,
+        flag: 'wx',
+        flush: true,
+      });
+    }
+    return records;
   } finally {
     await context.close();
   }

@@ -28,3 +28,13 @@ Display run status, logs and a bounded record preview. Save JSON automatically. 
 - Static: follow the ordered repository checks in [[plans/01-local-browser-jobs/testing]].
 - Runtime: Complete the first milestone: run Wikipedia from the app and export both formats. Round-trip quotes, commas, newlines, Unicode and uneven keys; reject nested CSV without damaging JSON.
 - Add focused behavioral tests for state transitions and failure boundaries; no module mocking.
+
+## Progress (2026-10-26)
+
+- Added paginated saved run history and persisted status, failures, bounded logs and a 20-record preview.
+- Added JSON and flat CSV export through a native save dialog. CSV uses the union of keys, preserves record order, and rejects nested data before destination selection.
+- Empty datasets export as `[]` in JSON and zero bytes in CSV. Nonempty records with no columns require JSON. Exports preserve existing destination files.
+- Added tests for CSV round trips, Unicode/escaping, missing/null fields, invalid datasets, bounded logs, restart persistence and export failure isolation.
+- The user confirmed the bundled Wikipedia job works in the app. Selecting saved history and exporting both formats through the desktop dialog still need manual acceptance.
+- Verification passed: `pnpm check` → `pnpm typecheck` → `pnpm test` → `pnpm build`, plus focused web lint and Cargo Clippy. The runtime-enabled suite passed 33 TypeScript and 22 Rust tests, including live Wikipedia extraction.
+- Next implementation layer: [[plans/01-local-browser-jobs/phase-08-cancellation-recovery]].

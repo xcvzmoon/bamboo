@@ -2,13 +2,13 @@
 
 ## Context
 
-Bamboo becomes a macOS desktop tool for its developer owner to run trusted local TypeScript browser jobs on demand or while the app is running. This records the product interview decisions of 2026-10-26; implementation has not started.
+Bamboo becomes a macOS desktop tool for its developer owner to run trusted local TypeScript browser jobs on demand or while the app is running. This records the product interview decisions of 2026-10-26; runtime, runner, storage and supervisor code are present. Jobs, run history/export, cancellation and the manual queue are implemented. The session compatibility gate passes with Lightpanda 1.0.2; saved login profiles are implemented. Profile-backed jobs and explicit expired-login handling are implemented. Schedule persistence and next-occurrence calculation are implemented. Automatic schedule dispatch while the app is open is implemented. Schedule controls and history management are implemented. All 15 layers are complete.
 
 ## Scope
 
 - Nuxt/Tauri interface; Rust owns Lightpanda, scheduling, queue, persistence and cleanup.
 - Separate Node process per job using Playwright over Lightpanda CDP; no custom Rust automation API.
-- User installs Node, Lightpanda and project dependencies. Installed Chrome is used only for manual login capture; no bundled/downloaded Chromium or execution fallback.
+- User installs Node, Lightpanda and project dependencies. The owner-selected installed Helium browser is used only for manual login capture; no bundled/downloaded Chromium or execution fallback.
 - Register local project/entry; named JSON inputs saved per job, editable for manual runs; no input presets initially.
 - Trusted scripts may use npm, filesystem, network and project-managed environment configuration. No sandbox or Bamboo secret manager.
 - Return hundreds to thousands of JSON records; separate dataset per successful run; flat CSV export.
@@ -26,7 +26,7 @@ Bamboo becomes a macOS desktop tool for its developer owner to run trusted local
 - SQLite metadata plus app-data artifacts gives durable queryable history without an external service. A JSON-only store would complicate concurrent state updates; a remote database is unnecessary.
 - Job code/dependencies execute from the user's project; distribute the runner and its private dependencies as app resources, with an established TypeScript loader. Verify packaged resolution before selecting exact packaging configuration.
 - Rust state is authoritative; narrow Tauri commands mutate it and events notify the UI to refresh. Restrict frontend capabilities; trusted job access remains unrestricted.
-- Profile transfer is a compatibility gate, not a guarantee. Explicitly test installed Chrome to Lightpanda cookie/local-storage round trips before building profile UX.
+- Profile transfer is a compatibility gate, not a guarantee. Explicitly test installed capture browser to Lightpanda cookie/local-storage round trips before building profile UX.
 - Initial runtime/version and Mac architecture support are evidence-based outputs of phase 1. Do not claim all macOS hardware is supported before checking binaries.
 
 ## Applicable skills
@@ -63,3 +63,8 @@ See [[plans/01-local-browser-jobs/testing]]. Phases 1–7 deliver the first vert
 - [Lightpanda Playwright CDP integration](https://github.com/lightpanda-io/docs/blob/main/src/content/usage/cdp/playwright.mdx).
 - [Playwright CDP connection limitations](https://playwright.dev/docs/api/class-browsertype#browser-type-connect-over-cdp).
 - [Playwright authentication state](https://playwright.dev/docs/auth). State export support alone does not establish Lightpanda import compatibility.
+
+## Completion
+
+- Completed on 2026-10-27. All 15 phases are implemented.
+- Final verification passed formatting, type checking, tests, all-target Clippy, and the macOS app/DMG build. The acceptance test exercised Helium login capture, native Keychain storage, authenticated scheduled Lightpanda execution, manual JSON overrides, restart persistence, JSON/CSV exports, and single/all-history deletion.

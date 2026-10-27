@@ -137,3 +137,38 @@ CommonJS entry points, and alternate runtime loaders are outside this contract.
 Run `BAMBOO_RUNTIME_TEST=1 pnpm test:unit tests/runner` to include local Lightpanda execution,
 context cleanup and real child-process tests. Add `BAMBOO_WIKIPEDIA_TEST=1` to
 include live Wikipedia extraction; that live site is excluded from default tests.
+
+## Saved login profiles
+
+Create a profile in Bamboo's Login profiles panel, then choose it on a saved job
+and click Save login profile. Each queued run keeps that job's profile selection.
+Bamboo restores the selected session into the job's managed context. A job with
+no profile starts with a fresh session.
+
+If the site explicitly asks for login, signal that condition in the script:
+
+```typescript
+import type { JobContext, JobResult } from '/path/to/bamboo/runner/job.ts';
+import { AuthenticationRequiredError } from '/path/to/bamboo/runner/job.ts';
+
+export default async function job({ context }: JobContext): Promise<JobResult> {
+  const page = await context.newPage();
+  await page.goto('https://example.com/account');
+  if (await page.getByRole('button', { name: 'Sign in' }).isVisible()) {
+    throw new AuthenticationRequiredError();
+  }
+  return [{ title: await page.title() }];
+}
+```
+
+This error fails the run without a dataset and marks the profile as needing
+refresh. Ordinary errors do not mark authentication as expired. Refresh the login
+through Helium in Login profiles, then run the job again.
+
+Successful jobs can rotate cookies or other session state. Bamboo encrypts the
+candidate session in a recovery journal, publishes the validated dataset, then
+atomically replaces the saved profile. Failed, cancelled, and interrupted runs
+preserve the previous session. Recovery applies a pending session only when its
+run has published successfully. A manual refresh made during a run takes priority
+over that run's candidate session. These guarantees cover local saved state;
+changes the script makes to the remote site remain the site's responsibility.

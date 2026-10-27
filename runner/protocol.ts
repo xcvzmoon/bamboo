@@ -115,6 +115,8 @@ const failureCodeSchema = v.picklist([
   'JOB_EXECUTION',
   'JOB_RESULT',
   'BROWSER_CLEANUP',
+  'AUTHENTICATION_REQUIRED',
+  'PROFILE_STATE',
 ]);
 
 export const runFailureSchema = v.object({
@@ -130,6 +132,7 @@ const runRequestSchema = v.strictObject({
   entryFile: v.pipe(v.string(), v.nonEmpty()),
   endpoint: v.pipe(v.string(), v.url(), v.regex(/^(?:http|ws):\/\/127\.0\.0\.1:\d+\/?$/)),
   input: jsonValueSchema,
+  profile: v.optional(v.literal(true)),
 });
 
 const runOutcomeSchema = v.variant('status', [

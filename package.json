@@ -34,12 +34,14 @@
     "nuxt:typecheck": "nuxt typecheck",
     "add-component": "shadcn-vue add",
     "probe:runtime": "node tools/probes/lightpanda.ts",
+    "probe:session": "node tools/probes/session-transfer.ts",
     "runner:job": "node runner/main.ts",
     "runner:package": "node tools/package-runner.ts"
   },
   "dependencies": {
     "@lucide/vue": "1.61.0",
     "@nuxt/icon": "2.6.0",
+    "@tauri-apps/api": "^2.12.4",
     "@vueuse/core": "^15.0.0",
     "@vueuse/nuxt": "15.0.0",
     "class-variance-authority": "^0.7.1",

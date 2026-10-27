@@ -4,6 +4,7 @@ use std::{
     os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
+    sync::Arc,
     time::Duration,
 };
 
@@ -23,6 +24,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
+use crate::profiles::{ProfileError, Profiles};
 use crate::storage::{
     LogStream, Records, Run, RunCompletion, RunFailure, RuntimeVersions, Storage, StorageError,
 };
@@ -31,6 +33,8 @@ use crate::storage::{
 pub enum SupervisorError {
     #[error("{0}")]
     Storage(#[from] StorageError),
+    #[error("{0}")]
+    Profile(#[from] ProfileError),
     #[error("RUN_IO: {0}")]
     Io(#[from] io::Error),
     #[error("RUN_JSON: {0}")]
@@ -44,6 +48,7 @@ impl SupervisorError {
     pub fn code(&self) -> &str {
         match self {
             Self::Storage(error) => error.code(),
+            Self::Profile(error) => error.code(),
             Self::Io(_) => "RUN_IO",
             Self::Json(_) => "RUN_JSON",
             Self::Task(_) => "RUN_TASK",
@@ -98,6 +103,8 @@ struct RunRequest<'a> {
     entry_file: &'a Path,
     endpoint: &'a str,
     input: &'a Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -122,6 +129,8 @@ enum OutcomeFailureCode {
     JobExecution,
     JobResult,
     BrowserCleanup,
+    AuthenticationRequired,
+    ProfileState,
 }
 
 impl OutcomeFailureCode {
@@ -134,16 +143,26 @@ impl OutcomeFailureCode {
             Self::JobExecution => "JOB_EXECUTION",
             Self::JobResult => "JOB_RESULT",
             Self::BrowserCleanup => "BROWSER_CLEANUP",
+            Self::AuthenticationRequired => "AUTHENTICATION_REQUIRED",
+            Self::ProfileState => "PROFILE_STATE",
         }
     }
 }
 
+#[derive(Clone, Copy)]
+struct RunControl {
+    id: Uuid,
+    cancelled: bool,
+}
+
 pub struct RunSupervisor {
     storage: Storage,
+    profiles: Arc<Profiles>,
     runner_directory: PathBuf,
     config_path: PathBuf,
     admission: Mutex<()>,
     shutdown: watch::Sender<bool>,
+    control: watch::Sender<Option<RunControl>>,
 }
 
 impl RunSupervisor {
@@ -151,8 +170,12 @@ impl RunSupervisor {
         storage: Storage,
         runner_directory: PathBuf,
         config_directory: PathBuf,
+        profiles: Arc<Profiles>,
     ) -> Result<Self> {
-        if !runner_directory.is_absolute() || !runner_directory.join("main.ts").is_file() {
+        if !runner_directory.is_absolute()
+            || !runner_directory.join("main.ts").is_file()
+            || !runner_directory.join("guard.ts").is_file()
+        {
             return Err(failure("RUNNER_ASSETS", "Packaged runner entry is missing"));
         }
         fs::create_dir_all(&config_directory)?;
@@ -164,12 +187,15 @@ impl RunSupervisor {
         }
         fs::set_permissions(&config_directory, fs::Permissions::from_mode(0o700))?;
         let (shutdown, _) = watch::channel(false);
+        let (control, _) = watch::channel(None);
         Ok(Self {
             storage,
+            profiles,
             runner_directory,
             config_path: config_directory.join("runtimes.json"),
             admission: Mutex::new(()),
             shutdown,
+            control,
         })
     }
 
@@ -188,6 +214,12 @@ impl RunSupervisor {
         Ok(paths)
     }
 
+    pub(crate) fn publish_profile_update(&self, run_id: Uuid) -> Result<()> {
+        self.profiles
+            .publish(run_id, &self.storage)
+            .map_err(Into::into)
+    }
+
     pub fn runtime_paths(&self) -> Result<RuntimePaths> {
         let file = File::open(&self.config_path)
             .map_err(|error| failure("RUNTIME_CONFIG", error.to_string()))?;
@@ -196,12 +228,45 @@ impl RunSupervisor {
         paths.validate()
     }
 
+    pub fn active_run(&self) -> Result<Option<Run>> {
+        let id = self.control.borrow().map(|control| control.id);
+        id.map(|id| self.storage.get_run(id))
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    pub fn cancel(&self, id: Uuid) -> bool {
+        self.control.send_if_modified(|active| {
+            if let Some(control) = active.as_mut()
+                && control.id == id
+                && !control.cancelled
+            {
+                control.cancelled = true;
+                return true;
+            }
+            false
+        })
+    }
+
+    pub(crate) fn reserve(&self, id: Uuid) {
+        self.control.send_if_modified(|control| {
+            if control.is_some_and(|control| control.id == id) {
+                return false;
+            }
+            *control = Some(RunControl {
+                id,
+                cancelled: false,
+            });
+            true
+        });
+    }
+
     pub async fn shutdown(&self) {
         self.shutdown.send_replace(true);
         let _guard = self.admission.lock().await;
     }
 
-    pub async fn run(&self, job_id: Uuid, input: Value) -> Result<Run> {
+    pub async fn run(&self, queued: Run) -> Result<Run> {
         let _guard = self
             .admission
             .try_lock()
@@ -211,17 +276,30 @@ impl RunSupervisor {
             return Err(failure("RUN_SHUTDOWN", "The supervisor is shutting down"));
         }
         let storage = self.storage.clone();
-        let queued =
-            tokio::task::spawn_blocking(move || storage.queue_run(job_id, &input)).await??;
-        let storage = self.storage.clone();
         let id = queued.id;
+        self.reserve(id);
+        let mut cancellation = self.control.subscribe();
+        let profiles = self.profiles.clone();
+        let profile_id = queued.job.profile_id;
         let prepared = tokio::task::spawn_blocking(move || -> Result<_> {
-            let protocol = TempDir::with_prefix("bamboo-run-")?;
+            let protocol = storage.create_protocol_directory(id)?;
             fs::set_permissions(protocol.path(), fs::Permissions::from_mode(0o700))?;
+            profiles.recover(&storage)?;
+            let snapshot = profile_id.map(|id| profiles.snapshot(id)).transpose()?;
+            if let Some(snapshot) = &snapshot {
+                use std::io::Write;
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(protocol.path().join("profile.json"))?;
+                file.write_all(&snapshot.state)?;
+            }
             Ok((
                 protocol,
                 storage.open_log(id, LogStream::Stdout)?,
                 storage.open_log(id, LogStream::Stderr)?,
+                snapshot,
             ))
         })
         .await
@@ -232,15 +310,23 @@ impl RunSupervisor {
                 code: error.code().into(),
                 message: error.to_string(),
             }),
-            Ok((protocol, stdout, stderr)) => {
+            Ok((protocol, stdout, stderr, snapshot)) => {
                 let mut active = ActiveRun {
                     children: Vec::new(),
+                    guard: self.runner_directory.join("guard.ts"),
+                    node: None,
                     starting: None,
                     protocol,
                     stdout,
                     stderr,
                 };
                 let execution = tokio::select! {
+                    biased;
+                    _ = async {
+                        if !cancellation.borrow().is_some_and(|control| control.cancelled) {
+                            let _ = cancellation.changed().await;
+                        }
+                    } => Err(failure("RUN_CANCELLED", "Run cancelled by user")),
                     result = timeout(Duration::from_millis(queued.job.timeout_ms as u64), self.execute(&queued, &mut active)) => {
                         match result {
                             Ok(result) => result,
@@ -250,7 +336,32 @@ impl RunSupervisor {
                     _ = shutdown.changed() => Err(failure("RUN_SHUTDOWN", "App is shutting down")),
                 };
                 let cleanup = active.stop().await;
-                let execution = execution.and_then(|records| cleanup.map(|()| records));
+                let execution = match cleanup {
+                    Ok(()) => execution,
+                    Err(error) => Err(error),
+                };
+                let execution = if let Some(snapshot) = snapshot {
+                    let profiles = self.profiles.clone();
+                    let candidate = active.protocol.path().join("candidate.json");
+                    tokio::task::spawn_blocking(move || -> Result<Records> {
+                        if execution.is_ok() {
+                            if fs::metadata(&candidate)?.len() > 16 * 1024 * 1024 {
+                                return Err(ProfileError::State.into());
+                            }
+                            let state = zeroize::Zeroizing::new(fs::read(candidate)?);
+                            profiles.stage(id, &snapshot, Some(&state))?;
+                        } else if execution
+                            .as_ref()
+                            .is_err_and(|error| error.code() == "AUTHENTICATION_REQUIRED")
+                        {
+                            profiles.stage(id, &snapshot, None)?;
+                        }
+                        execution
+                    })
+                    .await?
+                } else {
+                    execution
+                };
                 let completion = match execution {
                     Ok(records) => RunCompletion::Succeeded(records),
                     Err(error) => {
@@ -258,8 +369,10 @@ impl RunSupervisor {
                         if let Err(log_error) = writeln!(active.stderr, "{error}") {
                             log::error!("RUN_LOG: {log_error}");
                         }
-                        if error.code() == "RUN_SHUTDOWN" {
-                            RunCompletion::Interrupted
+                        if error.code() == "RUN_CANCELLED" {
+                            RunCompletion::Cancelled
+                        } else if error.code() == "RUN_SHUTDOWN" {
+                            RunCompletion::AppExit
                         } else {
                             RunCompletion::Failed(RunFailure {
                                 code: error.code().into(),
@@ -272,14 +385,32 @@ impl RunSupervisor {
                 completion
             }
         };
+        let previous = self.control.send_replace(None);
+        let completion = if matches!(completion, RunCompletion::Succeeded(_)) && *shutdown.borrow()
+        {
+            RunCompletion::AppExit
+        } else if matches!(completion, RunCompletion::Succeeded(_))
+            && previous.is_some_and(|control| control.cancelled)
+        {
+            RunCompletion::Cancelled
+        } else {
+            completion
+        };
         let storage = self.storage.clone();
-        tokio::task::spawn_blocking(move || storage.finish_run(id, completion))
-            .await?
-            .map_err(Into::into)
+        let profiles = self.profiles.clone();
+        tokio::task::spawn_blocking(move || -> Result<Run> {
+            let run = storage.finish_run(id, completion)?;
+            if let Err(error) = profiles.publish(id, &storage) {
+                log::error!("PROFILE_PUBLICATION: {error}");
+            }
+            Ok(run)
+        })
+        .await?
     }
 
     async fn execute(&self, queued: &Run, active: &mut ActiveRun) -> Result<Records> {
         let paths = self.runtime_paths()?;
+        active.node = Some(paths.node.clone());
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct NodeInfo {
@@ -371,6 +502,7 @@ impl RunSupervisor {
             entry_file: &queued.job.entry_path,
             endpoint: &endpoint,
             input: &queued.job.input,
+            profile: queued.job.profile_id.map(|_| true),
         };
         let request_path = active.protocol.path().join("request.json");
         let file = OpenOptions::new()
@@ -402,6 +534,8 @@ impl RunSupervisor {
 }
 
 struct ActiveRun {
+    guard: PathBuf,
+    node: Option<PathBuf>,
     children: Vec<OwnedProcess>,
     starting: Option<tokio::task::JoinHandle<std::result::Result<Run, StorageError>>>,
     protocol: TempDir,
@@ -409,7 +543,32 @@ struct ActiveRun {
     stderr: File,
 }
 impl ActiveRun {
-    fn spawn_logged(&mut self, mut command: Command) -> Result<()> {
+    fn guarded(&self, command: Command) -> Result<Command> {
+        let node = self
+            .node
+            .as_ref()
+            .ok_or_else(|| failure("RUN_PROCESS", "Missing guard runtime"))?;
+        let original = command.as_std();
+        let mut guarded = Command::new(node);
+        guarded
+            .arg(&self.guard)
+            .arg(original.get_program())
+            .args(original.get_args());
+        if let Some(directory) = original.get_current_dir() {
+            guarded.current_dir(directory);
+        }
+        for (name, value) in original.get_envs() {
+            if let Some(value) = value {
+                guarded.env(name, value);
+            } else {
+                guarded.env_remove(name);
+            }
+        }
+        Ok(guarded)
+    }
+
+    fn spawn_logged(&mut self, command: Command) -> Result<()> {
+        let mut command = self.guarded(command)?;
         command
             .stdout(Stdio::from(self.stdout.try_clone()?))
             .stderr(Stdio::from(self.stderr.try_clone()?));
@@ -417,7 +576,8 @@ impl ActiveRun {
         Ok(())
     }
 
-    async fn version_output(&mut self, mut command: Command) -> Result<Vec<u8>> {
+    async fn version_output(&mut self, command: Command) -> Result<Vec<u8>> {
+        let mut command = self.guarded(command)?;
         command
             .stdout(Stdio::piped())
             .stderr(Stdio::from(self.stderr.try_clone()?));
@@ -489,7 +649,7 @@ struct OwnedProcess {
 impl OwnedProcess {
     fn spawn(mut command: Command) -> Result<Self> {
         command
-            .stdin(Stdio::null())
+            .stdin(Stdio::piped())
             .process_group(0)
             .kill_on_drop(true);
         let child = command.spawn()?;
@@ -511,8 +671,10 @@ impl OwnedProcess {
             return Ok(());
         };
         signal_group(group, Signal::SIGTERM)?;
+        let owner_pipe = self.child.stdin.take();
         let result = timeout(Duration::from_secs(2), self.child.wait()).await;
         signal_group(group, Signal::SIGKILL)?;
+        drop(owner_pipe);
         self.group = None;
         if let Ok(status) = result {
             status?;
@@ -534,6 +696,7 @@ impl Drop for OwnedProcess {
 fn signal_group(group: Pid, signal: Signal) -> Result<()> {
     match killpg(group, signal) {
         Ok(()) | Err(Errno::ESRCH) => Ok(()),
+        Err(Errno::EPERM) if nix::sys::signal::kill(group, None) == Err(Errno::ESRCH) => Ok(()),
         Err(error) => Err(failure("RUN_CLEANUP", error.to_string())),
     }
 }

@@ -6,7 +6,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavior, params};
+use rusqlite::{
+    Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior, params,
+};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -35,6 +37,12 @@ pub enum StorageError {
     MissingArtifact(PathBuf),
     #[error("STORAGE_ARTIFACT_INVALID: Artifact is not a regular file or valid dataset")]
     InvalidArtifact,
+    #[error("HISTORY_ACTIVE: Wait for queued, running, or finalizing work before deleting history")]
+    HistoryActive,
+    #[error(
+        "HISTORY_COMMIT: Some files may have been removed, but history changes could not be committed. Retry deletion"
+    )]
+    DeletionCommit(#[source] rusqlite::Error),
     #[error("STORAGE_CLOCK: System time cannot be represented as Unix milliseconds")]
     Clock,
 }
@@ -53,6 +61,8 @@ impl StorageError {
             Self::MissingArtifact(_) => "STORAGE_ARTIFACT_MISSING",
             Self::InvalidArtifact => "STORAGE_ARTIFACT_INVALID",
             Self::Clock => "STORAGE_CLOCK",
+            Self::HistoryActive => "HISTORY_ACTIVE",
+            Self::DeletionCommit(_) => "HISTORY_COMMIT",
         }
     }
 }
@@ -60,10 +70,30 @@ impl StorageError {
 type Result<T> = std::result::Result<T, StorageError>;
 pub type Records = Vec<Map<String, Value>>;
 
+#[derive(Clone, Copy)]
+pub enum HistoryTarget {
+    Run(Uuid),
+    Job(Uuid),
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteRunFailure {
+    pub run_id: Uuid,
+    pub code: &'static str,
+    pub message: String,
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct DeleteRunResult {
+    pub deleted: Vec<Uuid>,
+    pub failed: Vec<DeleteRunFailure>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Job {
     pub id: Uuid,
     pub name: String,
+    pub profile_id: Option<Uuid>,
     pub project_path: PathBuf,
     pub entry_path: PathBuf,
     pub input: Value,
@@ -113,6 +143,7 @@ pub enum RunCompletion {
     Succeeded(Records),
     Failed(RunFailure),
     Cancelled,
+    AppExit,
     Interrupted,
 }
 
@@ -176,6 +207,8 @@ impl Storage {
             (1, 1111575874) => {}
             _ => return Err(StorageError::UnsupportedSchema),
         }
+        transaction.execute_batch(include_str!("storage/job-profiles.sql"))?;
+        transaction.execute_batch(include_str!("storage/schedules.sql"))?;
         transaction.commit()?;
         connection.pragma_update(None, "journal_mode", "WAL")?;
         Ok(storage)
@@ -237,6 +270,7 @@ impl Storage {
         Ok(Job {
             id,
             name: name.trim().into(),
+            profile_id: None,
             project_path: project,
             entry_path: entry,
             input: input.clone(),
@@ -245,19 +279,163 @@ impl Storage {
         })
     }
 
+    pub fn create_protocol_directory(&self, id: Uuid) -> Result<tempfile::TempDir> {
+        let run = self.get_run(id)?;
+        if !matches!(run.status, RunStatus::Queued | RunStatus::Running) {
+            return Err(StorageError::InvalidTransition);
+        }
+        Ok(tempfile::Builder::new()
+            .prefix("protocol-")
+            .tempdir_in(self.root.join("runs").join(id.to_string()))?)
+    }
+
+    pub fn recover_unfinished_runs(&self) -> Result<usize> {
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let ids = {
+            let mut statement =
+                transaction.prepare("SELECT id FROM runs WHERE status IN ('queued','running')")?;
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        for id in &ids {
+            let directory = self.root.join("runs").join(id);
+            for entry in fs::read_dir(&directory)? {
+                let entry = entry?;
+                if entry.file_name().to_string_lossy().starts_with("protocol-")
+                    && entry.file_type()?.is_dir()
+                {
+                    fs::remove_dir_all(entry.path())?;
+                }
+            }
+            let result = directory.join("results.json");
+            match fs::remove_file(result) {
+                Ok(()) => File::open(&directory)?.sync_all()?,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        let failure = serde_json::to_string(&RunFailure {
+            code: "RUN_INTERRUPTED".into(),
+            message: "App stopped before the run finished; it will not be resumed".into(),
+        })?;
+        let count = transaction.execute(
+            "UPDATE runs SET status='interrupted',finished_at=MAX(?1,COALESCE(started_at,queued_at)),failure=?2,record_count=NULL WHERE status IN ('queued','running')",
+            params![timestamp()?, failure],
+        )?;
+        transaction.commit()?;
+        Ok(count)
+    }
+
     pub fn get_job(&self, id: Uuid) -> Result<Job> {
         self.connection()?
-            .query_row("SELECT * FROM jobs WHERE id=?1", [id.to_string()], read_job)
+            .query_row("SELECT jobs.*,job_profiles.profile_id FROM jobs LEFT JOIN job_profiles ON jobs.id=job_profiles.job_id WHERE jobs.id=?1", [id.to_string()], read_job)
             .optional()?
             .ok_or(StorageError::NotFound)
     }
 
     pub fn list_jobs(&self) -> Result<Vec<Job>> {
         let connection = self.connection()?;
-        let mut statement = connection.prepare("SELECT * FROM jobs ORDER BY created_at,id")?;
+        let mut statement = connection.prepare("SELECT jobs.*,job_profiles.profile_id FROM jobs LEFT JOIN job_profiles ON jobs.id=job_profiles.job_id ORDER BY created_at,jobs.id")?;
         Ok(statement
             .query_map([], read_job)?
             .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn save_job_settings(
+        &self,
+        id: Uuid,
+        name: &str,
+        input: &Value,
+        timeout_ms: i64,
+    ) -> Result<Job> {
+        if name.trim().is_empty() || timeout_ms <= 0 {
+            return Err(StorageError::InvalidInput(
+                "Job needs a name and a positive timeout in milliseconds",
+            ));
+        }
+        let connection = self.connection()?;
+        if connection.execute(
+            "UPDATE jobs SET name=?2,input=?3,timeout_ms=?4 WHERE id=?1",
+            params![
+                id.to_string(),
+                name.trim(),
+                serde_json::to_string(input)?,
+                timeout_ms
+            ],
+        )? == 0
+        {
+            return Err(StorageError::NotFound);
+        }
+        self.get_job(id)
+    }
+
+    pub fn save_schedule(
+        &self,
+        job_id: Uuid,
+        schedule: crate::schedule::Schedule,
+        clock: &impl crate::schedule::Clock,
+    ) -> std::result::Result<crate::schedule::ScheduleDetails, crate::schedule::ScheduleError> {
+        self.get_job(job_id)?;
+        schedule.validate()?;
+        let reading = clock.read()?;
+        let saved = crate::schedule::SavedSchedule {
+            job_id,
+            revision: Uuid::now_v7(),
+            schedule,
+            anchor_at: reading.now.as_millisecond(),
+            last_occurrence: None,
+        };
+        let details = saved.details(&reading)?;
+        self.connection()?.execute("INSERT INTO schedules(job_id,revision,definition,anchor_at,last_occurrence) VALUES (?1,?2,?3,?4,NULL) ON CONFLICT(job_id) DO UPDATE SET revision=excluded.revision,definition=excluded.definition,anchor_at=excluded.anchor_at,last_occurrence=NULL", params![job_id.to_string(), saved.revision.to_string(), serde_json::to_string(&saved.schedule).map_err(StorageError::from)?, saved.anchor_at]).map_err(StorageError::from)?;
+        Ok(details)
+    }
+
+    pub fn list_schedules(&self) -> Result<Vec<crate::schedule::SavedSchedule>> {
+        let connection = self.connection()?;
+        let mut statement = connection.prepare("SELECT * FROM schedules ORDER BY job_id")?;
+        Ok(statement
+            .query_map([], read_schedule)?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn get_schedule(&self, job_id: Uuid) -> Result<Option<crate::schedule::SavedSchedule>> {
+        self.get_job(job_id)?;
+        Ok(self
+            .connection()?
+            .query_row(
+                "SELECT * FROM schedules WHERE job_id=?1",
+                [job_id.to_string()],
+                read_schedule,
+            )
+            .optional()?)
+    }
+
+    pub fn record_schedule_occurrence(
+        &self,
+        job_id: Uuid,
+        revision: Uuid,
+        occurrence: i64,
+    ) -> Result<bool> {
+        jiff::Timestamp::from_millisecond(occurrence).map_err(|_| {
+            StorageError::InvalidInput("Schedule occurrence exceeds the supported timestamp range")
+        })?;
+        Ok(self.connection()?.execute("UPDATE schedules SET last_occurrence=?3 WHERE job_id=?1 AND revision=?2 AND json_extract(definition,'$.kind')<>'disabled' AND ?3>anchor_at AND (last_occurrence IS NULL OR last_occurrence<?3)", params![job_id.to_string(), revision.to_string(), occurrence])? == 1)
+    }
+
+    pub fn set_job_profile(&self, job_id: Uuid, profile_id: Option<Uuid>) -> Result<Job> {
+        self.get_job(job_id)?;
+        let connection = self.connection()?;
+        if let Some(profile_id) = profile_id {
+            connection.execute("INSERT INTO job_profiles(job_id,profile_id) VALUES (?1,?2) ON CONFLICT(job_id) DO UPDATE SET profile_id=excluded.profile_id", params![job_id.to_string(),profile_id.to_string()])?;
+        } else {
+            connection.execute(
+                "DELETE FROM job_profiles WHERE job_id=?1",
+                [job_id.to_string()],
+            )?;
+        }
+        self.get_job(job_id)
     }
 
     pub fn queue_run(&self, job_id: Uuid, input: &Value) -> Result<Run> {
@@ -265,13 +443,36 @@ impl Storage {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut job = transaction
             .query_row(
-                "SELECT * FROM jobs WHERE id=?1",
+                "SELECT jobs.*,job_profiles.profile_id FROM jobs LEFT JOIN job_profiles ON jobs.id=job_profiles.job_id WHERE jobs.id=?1",
                 [job_id.to_string()],
                 read_job,
             )
             .optional()?
             .ok_or(StorageError::NotFound)?;
         job.input = input.clone();
+        self.insert_queued_run(transaction, job)
+    }
+
+    pub fn queue_scheduled_run(
+        &self,
+        job_id: Uuid,
+        revision: Uuid,
+        occurrence: i64,
+    ) -> Result<Option<Run>> {
+        jiff::Timestamp::from_millisecond(occurrence).map_err(|_| {
+            StorageError::InvalidInput("Schedule occurrence exceeds the supported timestamp range")
+        })?;
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if transaction.execute("UPDATE schedules SET last_occurrence=?3 WHERE job_id=?1 AND revision=?2 AND json_extract(definition,'$.kind')<>'disabled' AND ?3>anchor_at AND (last_occurrence IS NULL OR last_occurrence<?3)", params![job_id.to_string(), revision.to_string(), occurrence])? == 0 {
+            return Ok(None);
+        }
+        let job = transaction.query_row("SELECT jobs.*,job_profiles.profile_id FROM jobs LEFT JOIN job_profiles ON jobs.id=job_profiles.job_id WHERE jobs.id=?1", [job_id.to_string()], read_job)?;
+        self.insert_queued_run(transaction, job).map(Some)
+    }
+
+    fn insert_queued_run(&self, transaction: Transaction<'_>, job: Job) -> Result<Run> {
+        let job_id = job.id;
         let id = Uuid::now_v7();
         let directory = self.root.join("runs").join(id.to_string());
         fs::DirBuilder::new().mode(0o700).create(&directory)?;
@@ -302,6 +503,69 @@ impl Storage {
                 Err(error)
             }
         }
+    }
+
+    pub(crate) fn deletion_candidates(&self, target: HistoryTarget) -> Result<Vec<Uuid>> {
+        history_candidates(&self.connection()?, target)
+    }
+
+    pub fn delete_history(&self, target: HistoryTarget) -> Result<DeleteRunResult> {
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let ids = history_candidates(&transaction, target)?;
+        let mut result = DeleteRunResult::default();
+        for id in ids {
+            let directory = self.root.join("runs").join(id.to_string());
+            match fs::symlink_metadata(&directory) {
+                Ok(metadata) if !metadata.is_dir() => {
+                    result.failed.push(DeleteRunFailure {
+                        run_id: id,
+                        code: "HISTORY_FILESYSTEM",
+                        message: "Run directory is not a regular directory. Metadata was kept."
+                            .into(),
+                    });
+                    continue;
+                }
+                Ok(_) => {
+                    if let Err(error) = fs::remove_dir_all(&directory) {
+                        result.failed.push(DeleteRunFailure { run_id: id, code: "HISTORY_FILESYSTEM", message: format!("{error}. Some files may already be removed; metadata was kept. Retry deletion.") });
+                        continue;
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    result.failed.push(DeleteRunFailure {
+                        run_id: id,
+                        code: "HISTORY_FILESYSTEM",
+                        message: format!("{error}. Metadata was kept. Retry deletion."),
+                    });
+                    continue;
+                }
+            }
+            if let Err(error) = File::open(self.root.join("runs")).and_then(|file| file.sync_all())
+            {
+                result.failed.push(DeleteRunFailure {
+                    run_id: id,
+                    code: "HISTORY_FILESYSTEM",
+                    message: format!(
+                        "{error}. Files may be removed; metadata was kept. Retry deletion."
+                    ),
+                });
+                continue;
+            }
+            match transaction.execute("DELETE FROM runs WHERE id=?1", [id.to_string()]) {
+                Ok(_) => result.deleted.push(id),
+                Err(error) => result.failed.push(DeleteRunFailure {
+                    run_id: id,
+                    code: "HISTORY_DATABASE",
+                    message: format!(
+                        "{error}. Files were removed; metadata was kept. Retry deletion."
+                    ),
+                }),
+            }
+        }
+        transaction.commit().map_err(StorageError::DeletionCommit)?;
+        Ok(result)
     }
 
     pub fn get_run(&self, id: Uuid) -> Result<Run> {
@@ -387,6 +651,15 @@ impl Storage {
                 None,
                 None,
             ),
+            RunCompletion::AppExit => (
+                "cancelled",
+                Some(RunFailure {
+                    code: "RUN_SHUTDOWN".into(),
+                    message: "Run cancelled because the app closed".into(),
+                }),
+                None,
+                None,
+            ),
             RunCompletion::Interrupted => (
                 "interrupted",
                 Some(RunFailure {
@@ -455,6 +728,16 @@ impl Storage {
         Ok(bytes)
     }
 
+    pub fn read_log_excerpt(&self, id: Uuid, stream: LogStream) -> Result<(String, bool)> {
+        self.get_run(id)?;
+        let file = read_artifact(&self.log_path(id, stream))?;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut std::io::Read::take(file, 65_537), &mut bytes)?;
+        let truncated = bytes.len() > 65_536;
+        bytes.truncate(65_536);
+        Ok((String::from_utf8_lossy(&bytes).into_owned(), truncated))
+    }
+
     /// Reads only datasets whose success state has committed in SQLite.
     pub fn read_results(&self, id: Uuid) -> Result<Records> {
         let run = self.get_run(id)?;
@@ -485,6 +768,40 @@ impl Storage {
                 LogStream::Stderr => "stderr.log",
             })
     }
+}
+
+fn history_candidates(connection: &Connection, target: HistoryTarget) -> Result<Vec<Uuid>> {
+    let (sql, id) = match target {
+        HistoryTarget::Run(id) => ("SELECT id,status FROM runs WHERE id=?1", id),
+        HistoryTarget::Job(id) => {
+            let exists: bool = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM jobs WHERE id=?1)",
+                [id.to_string()],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(StorageError::NotFound);
+            }
+            (
+                "SELECT id,status FROM runs WHERE job_id=?1 ORDER BY queued_at,id",
+                id,
+            )
+        }
+    };
+    let mut statement = connection.prepare(sql)?;
+    let mut rows = statement.query([id.to_string()])?;
+    let mut ids = Vec::new();
+    while let Some(row) = rows.next()? {
+        let status: String = row.get("status")?;
+        if matches!(status.as_str(), "queued" | "running") {
+            return Err(StorageError::HistoryActive);
+        }
+        ids.push(read_id(row, "id")?);
+    }
+    if ids.is_empty() && matches!(target, HistoryTarget::Run(_)) {
+        return Err(StorageError::NotFound);
+    }
+    Ok(ids)
 }
 
 fn timestamp() -> Result<i64> {
@@ -550,10 +867,38 @@ fn read_json<T: DeserializeOwned>(row: &Row<'_>, column: &str) -> rusqlite::Resu
     })
 }
 
+fn read_schedule(row: &Row<'_>) -> rusqlite::Result<crate::schedule::SavedSchedule> {
+    Ok(crate::schedule::SavedSchedule {
+        job_id: read_id(row, "job_id")?,
+        revision: read_id(row, "revision")?,
+        schedule: serde_json::from_str(&row.get::<_, String>("definition")?).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                2,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
+        anchor_at: row.get("anchor_at")?,
+        last_occurrence: row.get("last_occurrence")?,
+    })
+}
+
 fn read_job(row: &Row<'_>) -> rusqlite::Result<Job> {
     Ok(Job {
         id: read_id(row, "id")?,
         name: row.get("name")?,
+        profile_id: row
+            .get::<_, Option<String>>("profile_id")?
+            .map(|value| {
+                Uuid::parse_str(&value).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })
+            })
+            .transpose()?,
         project_path: PathBuf::from(row.get::<_, String>("project_path")?),
         entry_path: PathBuf::from(row.get::<_, String>("entry_path")?),
         input: row.get("input")?,

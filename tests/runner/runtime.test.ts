@@ -183,13 +183,13 @@ describe.runIf(process.env.BAMBOO_RUNTIME_TEST === '1')('Lightpanda jobs', () =>
   );
 
   test(
-    'returns Wikipedia article records',
+    'bundled example returns Wikipedia article records',
     {
       skip: process.env.BAMBOO_WIKIPEDIA_TEST !== '1',
       timeout: 45_000,
     },
     async ({ runtime: { browser } }) => {
-      const job = await loadJob(resolve('examples/wikipedia/job.ts'));
+      const job = await loadJob(resolve('src-tauri/resources/runner/example.ts'));
       const records = await executeJob(job, browser, { topic: 'Bamboo' });
       expect(records.length).toBeGreaterThan(0);
       expect(records[0]?.title).toBe('Bamboo');
