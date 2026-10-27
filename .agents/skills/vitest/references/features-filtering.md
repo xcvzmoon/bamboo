@@ -48,6 +48,19 @@ vitest --changed abc123
 vitest --changed origin/main
 ```
 
+## Since Last Run / Last Failed (5.1)
+
+```bash
+# Tests whose loaded files have a newer mtime than the test's last run (no Git needed)
+vitest run --since-last-run
+
+# Only tests that failed last time (read from the results cache; needs `cache` enabled)
+vitest run --last-failed
+vitest run --last-failed -t login   # combinable with other filters
+```
+
+`--since-last-run` enables `changed`, `experimental.recordDependencies` and the `mtime` VCS provider (`experimental.vcsProvider: 'mtime'`); the first run runs everything and records the loaded files (imports, mocks, setup files, snapshots) in `dependencies.json` in `cacheDir`. It cannot see files a test never loaded (new `.env`/`__mocks__` files) or mtimes set in the past by checkouts/archives. Good fit for agents: run `vitest run --since-last-run` after each edit and a full `vitest run` before finishing. Use `--changed <ref>` when the baseline must be shared (PR vs `origin/main`, CI).
+
 ## Related Files
 
 Run tests that import specific files:
@@ -61,18 +74,18 @@ Useful with lint-staged:
 ```js
 // .lintstagedrc.js
 export default {
-  "*.{ts,tsx}": "vitest related --run",
-};
+  '*.{ts,tsx}': 'vitest related --run',
+}
 ```
 
 ## Focus Tests (.only)
 
 ```ts
-test.only("only this runs", () => {});
+test.only('only this runs', () => {})
 
-describe.only("only this suite", () => {
-  test("runs", () => {});
-});
+describe.only('only this suite', () => {
+  test('runs', () => {})
+})
 ```
 
 In CI, `.only` throws error unless configured:
@@ -82,22 +95,22 @@ defineConfig({
   test: {
     allowOnly: true, // Allow .only in CI
   },
-});
+})
 ```
 
 ## Skip Tests
 
 ```ts
-test.skip("skipped", () => {});
+test.skip('skipped', () => {})
 
 // Conditional
-test.skipIf(process.env.CI)("not in CI", () => {});
-test.runIf(!process.env.CI)("local only", () => {});
+test.skipIf(process.env.CI)('not in CI', () => {})
+test.runIf(!process.env.CI)('local only', () => {})
 
 // Dynamic skip
-test("dynamic", ({ skip }) => {
-  skip(someCondition, "reason");
-});
+test('dynamic', ({ skip }) => {
+  skip(someCondition, 'reason')
+})
 ```
 
 ## Tags
@@ -108,12 +121,12 @@ Tags must be declared in config, then applied to tests/suites and filtered with 
 // vitest.config.ts
 defineConfig({
   test: {
-    tags: [{ name: "db" }, { name: "slow" }, { name: "flaky" }],
+    tags: [{ name: 'db' }, { name: 'slow' }, { name: 'flaky' }],
   },
-});
+})
 
 // test file
-test("database test", { tags: ["db"] }, () => {});
+test('database test', { tags: ['db'] }, () => {})
 ```
 
 ```bash
@@ -130,18 +143,22 @@ Full syntax, priority, and per-tag options: see [features-test-tags](features-te
 defineConfig({
   test: {
     // Test file patterns
-    include: ["**/*.{test,spec}.{ts,tsx}"],
-
+    include: ['**/*.{test,spec}.{ts,tsx}'],
+    
     // Exclude patterns
-    exclude: ["**/node_modules/**", "**/e2e/**", "**/*.skip.test.ts"],
-
+    exclude: [
+      '**/node_modules/**',
+      '**/e2e/**',
+      '**/*.skip.test.ts',
+    ],
+    
     // Include source for in-source testing
-    includeSource: ["src/**/*.ts"],
+    includeSource: ['src/**/*.ts'],
 
     // Scope discovery to a directory (faster than broad excludes)
-    dir: "./src",
+    dir: './src',
   },
-});
+})
 ```
 
 > v4 simplified default `exclude` to only `node_modules`/`.git`. Prefer `test.dir` to limit where tests are found; spread `configDefaults.exclude` to restore the old excludes.
@@ -149,7 +166,6 @@ defineConfig({
 ## Watch Mode Filtering
 
 In watch mode, press:
-
 - `p` - Filter by filename pattern
 - `t` - Filter by test name pattern
 - `a` - Run all tests
@@ -167,11 +183,11 @@ vitest --project integration --project e2e
 ## Environment-based Filtering
 
 ```ts
-const isDev = process.env.NODE_ENV === "development";
-const isCI = process.env.CI;
+const isDev = process.env.NODE_ENV === 'development'
+const isCI = process.env.CI
 
-describe.skipIf(isCI)("local only tests", () => {});
-describe.runIf(isDev)("dev tests", () => {});
+describe.skipIf(isCI)('local only tests', () => {})
+describe.runIf(isDev)('dev tests', () => {})
 ```
 
 ## Combining Filters
@@ -198,11 +214,12 @@ vitest list --json          # JSON output
 - Use `-t` for test name pattern filtering
 - `--changed` runs only tests affected by changes
 - `--related` runs tests importing specific files
+- `--since-last-run` (5.1, experimental) / `--last-failed` (5.1) select by previous run state
 - Tags provide semantic test grouping
 - Use `.only` for debugging, but configure CI to reject it
 - Watch mode has interactive filtering
 
-<!--
+<!-- 
 Source references:
 - https://vitest.dev/guide/filtering.html
 - https://vitest.dev/guide/cli.html

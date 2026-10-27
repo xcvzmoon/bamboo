@@ -8,61 +8,61 @@ description: Mock functions, modules, timers, and dates with vi utilities
 ## Mock Functions
 
 ```ts
-import { expect, vi } from "vitest";
+import { expect, vi } from 'vitest'
 
 // Create mock function
-const fn = vi.fn();
-fn("hello");
+const fn = vi.fn()
+fn('hello')
 
-expect(fn).toHaveBeenCalled();
-expect(fn).toHaveBeenCalledWith("hello");
+expect(fn).toHaveBeenCalled()
+expect(fn).toHaveBeenCalledWith('hello')
 
 // With implementation
-const add = vi.fn((a, b) => a + b);
-expect(add(1, 2)).toBe(3);
+const add = vi.fn((a, b) => a + b)
+expect(add(1, 2)).toBe(3)
 
 // Mock return values
-fn.mockReturnValue(42);
-fn.mockReturnValueOnce(1).mockReturnValueOnce(2);
-fn.mockResolvedValue({ data: true });
-fn.mockRejectedValue(new Error("fail"));
+fn.mockReturnValue(42)
+fn.mockReturnValueOnce(1).mockReturnValueOnce(2)
+fn.mockResolvedValue({ data: true })
+fn.mockRejectedValue(new Error('fail'))
 
 // Mock implementation
-fn.mockImplementation((x) => x * 2);
-fn.mockImplementationOnce(() => "first call");
+fn.mockImplementation((x) => x * 2)
+fn.mockImplementationOnce(() => 'first call')
 ```
+
+`fn.mock.instances` (and `contexts`) has one entry per call: `this` for plain calls, or the object `new` returned (`undefined` if the constructor threw). `mockReturnValue`/`mockResolvedValue` etc. throw when the mock is called with `new`; use `mockImplementation` for classes.
+
+`fn.mock.calls` stores arguments **by reference**. If the argument is mutated after the call, assertions see the mutated value; clone at call time (e.g. `mockImplementation(arg => calls.push(structuredClone(arg)))`) when you need the pre-mutation state.
 
 ## Spying on Objects
 
 ```ts
 const cart = {
   getTotal: () => 100,
-};
+}
 
-const spy = vi.spyOn(cart, "getTotal");
-cart.getTotal();
+const spy = vi.spyOn(cart, 'getTotal')
+cart.getTotal()
 
-expect(spy).toHaveBeenCalled();
+expect(spy).toHaveBeenCalled()
 
 // Mock implementation
-spy.mockReturnValue(200);
-expect(cart.getTotal()).toBe(200);
+spy.mockReturnValue(200)
+expect(cart.getTotal()).toBe(200)
 
 // Restore original
-spy.mockRestore();
+spy.mockRestore()
 ```
 
 Since v4, `vi.spyOn`/`vi.fn` can mock **constructors** — provide a `function` or `class` implementation (an arrow function throws "not a constructor"):
 
 ```ts
-const Spy = vi.spyOn(cart, "Apples").mockImplementation(
-  class {
-    getApples() {
-      return 0;
-    }
-  },
-);
-const instance = new Spy();
+const Spy = vi.spyOn(cart, 'Apples').mockImplementation(class {
+  getApples() { return 0 }
+})
+const instance = new Spy()
 ```
 
 ## Conditional Mocking with vi.when (v5)
@@ -72,13 +72,13 @@ Define per-argument behaviors without writing `if`/`switch` in `mockImplementati
 ```ts
 vi.when(db.findById)
   .calledWith(1)
-  .thenResolve({ id: 1, name: "Ella" })
+  .thenResolve({ id: 1, name: 'Ella' })
   .calledWith(2)
-  .thenResolve({ id: 2, name: "Gracie" });
+  .thenResolve({ id: 2, name: 'Gracie' })
 
 // Actions: thenReturn / thenThrow / thenResolve / thenReject (+ *Once variants)
 // `calledWith` supports asymmetric matchers
-vi.when(sendEmail).calledWith(expect.stringContaining("@")).thenReturn({ ok: true });
+vi.when(sendEmail).calledWith(expect.stringContaining('@')).thenReturn({ ok: true })
 ```
 
 - Behaviors match **first-in-first-out** (register specific before broad); stacked actions on one behavior consume **last-in-first-out**, with `{ times }` to limit.
@@ -90,56 +90,68 @@ vi.when(sendEmail).calledWith(expect.stringContaining("@")).thenReturn({ ok: tru
 In runtimes with Explicit Resource Management (Node 24+, TS 5.2+), declare spies/mocks with `using` to auto-restore when the block exits — works with `vi.spyOn`, `vi.fn`, `vi.doMock`, and `vi.when`:
 
 ```ts
-it("mocks console only here", () => {
-  using spy = vi.spyOn(console, "log").mockImplementation(() => {});
-  debug("message");
-  expect(spy).toHaveBeenCalled();
-}); // console.log restored automatically — no afterEach
+it('mocks console only here', () => {
+  using spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+  debug('message')
+  expect(spy).toHaveBeenCalled()
+} ) // console.log restored automatically — no afterEach
 ```
 
 ## Module Mocking
 
+`vi.mock`, `vi.unmock`, and `vi.hoisted` are hoisted to the top of the file. In v5 calling them inside a function, block, or `describe`/`test` callback **throws** (it only warned before) — keep them at the module top level. Use `vi.doMock`/`vi.doUnmock` for non-hoisted, in-scope mocking.
+
 ```ts
 // vi.mock is hoisted to top of file
-vi.mock("./api", () => ({
-  fetchUser: vi.fn(() => ({ id: 1, name: "Mock" })),
-}));
+vi.mock('./api', () => ({
+  fetchUser: vi.fn(() => ({ id: 1, name: 'Mock' })),
+}))
 
-import { fetchUser } from "./api";
+import { fetchUser } from './api'
 
-test("mocked module", () => {
-  expect(fetchUser()).toEqual({ id: 1, name: "Mock" });
-});
+test('mocked module', () => {
+  expect(fetchUser()).toEqual({ id: 1, name: 'Mock' })
+})
+```
+
+### Typed Mocks with `import()`
+
+Pass `import('./db.js')` instead of a string. TypeScript infers the module type, so the factory's return value is type-checked and `importOriginal` is typed. IDE renames/moves also update the path.
+
+```ts
+vi.mock(import('./db.js'), () => ({
+  getUser: vi.fn(),
+}))
 ```
 
 ### Partial Mock
 
 ```ts
-vi.mock("./utils", async (importOriginal) => {
-  const actual = await importOriginal();
+vi.mock(import('./utils'), async (importOriginal) => {
+  const actual = await importOriginal()
   return {
     ...actual,
     specificFunction: vi.fn(),
-  };
-});
+  }
+})
 ```
 
 ### Auto-mock with Spy
 
 ```ts
 // Keep implementation but spy on calls
-vi.mock("./calculator", { spy: true });
+vi.mock('./calculator', { spy: true })
 
-import { add } from "./calculator";
+import { add } from './calculator'
 
-test("spy on module", () => {
-  const result = add(1, 2); // Real implementation
-  expect(result).toBe(3);
-  expect(add).toHaveBeenCalledWith(1, 2);
-});
+test('spy on module', () => {
+  const result = add(1, 2) // Real implementation
+  expect(result).toBe(3)
+  expect(add).toHaveBeenCalledWith(1, 2)
+})
 ```
 
-### Manual Mocks (**mocks**)
+### Manual Mocks (__mocks__)
 
 ```
 src/
@@ -153,8 +165,8 @@ src/
 
 ```ts
 // Just call vi.mock with no factory
-vi.mock("axios");
-vi.mock("./api/client");
+vi.mock('axios')
+vi.mock('./api/client')
 ```
 
 ## Dynamic Mocking (vi.doMock)
@@ -162,112 +174,121 @@ vi.mock("./api/client");
 Not hoisted - use for dynamic imports:
 
 ```ts
-test("dynamic mock", async () => {
-  vi.doMock("./config", () => ({
-    apiUrl: "http://test.local",
-  }));
-
-  const { apiUrl } = await import("./config");
-  expect(apiUrl).toBe("http://test.local");
-
-  vi.doUnmock("./config");
-});
+test('dynamic mock', async () => {
+  vi.doMock('./config', () => ({
+    apiUrl: 'http://test.local',
+  }))
+  
+  const { apiUrl } = await import('./config')
+  expect(apiUrl).toBe('http://test.local')
+  
+  vi.doUnmock('./config')
+})
 ```
 
 ## Mock Timers
 
 ```ts
-import { afterEach, beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from 'vitest'
 
 beforeEach(() => {
-  vi.useFakeTimers();
-});
+  vi.useFakeTimers()
+})
 
 afterEach(() => {
-  vi.useRealTimers();
-});
+  vi.useRealTimers()
+})
 
-test("timers", () => {
-  const fn = vi.fn();
-  setTimeout(fn, 1000);
-
-  expect(fn).not.toHaveBeenCalled();
-
-  vi.advanceTimersByTime(1000);
-  expect(fn).toHaveBeenCalled();
-});
+test('timers', () => {
+  const fn = vi.fn()
+  setTimeout(fn, 1000)
+  
+  expect(fn).not.toHaveBeenCalled()
+  
+  vi.advanceTimersByTime(1000)
+  expect(fn).toHaveBeenCalled()
+})
 
 // Other timer methods
-vi.runAllTimers(); // Run all pending timers
-vi.runOnlyPendingTimers(); // Run only currently pending
-vi.advanceTimersToNextTimer(); // Advance to next timer
+vi.runAllTimers()           // Run all pending timers
+vi.runOnlyPendingTimers()   // Run only currently pending
+vi.advanceTimersToNextTimer() // Advance to next timer
 ```
 
 ### Async Timer Methods
 
 ```ts
-test("async timers", async () => {
-  vi.useFakeTimers();
-
-  let resolved = false;
-  setTimeout(
-    () =>
-      Promise.resolve().then(() => {
-        resolved = true;
-      }),
-    100,
-  );
-
-  await vi.advanceTimersByTimeAsync(100);
-  expect(resolved).toBe(true);
-});
+test('async timers', async () => {
+  vi.useFakeTimers()
+  
+  let resolved = false
+  setTimeout(() => Promise.resolve().then(() => { resolved = true }), 100)
+  
+  await vi.advanceTimersByTimeAsync(100)
+  expect(resolved).toBe(true)
+})
 ```
 
 ## Mock Dates
 
 ```ts
-vi.setSystemTime(new Date("2024-01-01"));
-expect(new Date().getFullYear()).toBe(2024);
+vi.setSystemTime(new Date('2024-01-01'))
+expect(new Date().getFullYear()).toBe(2024)
 
-vi.useRealTimers(); // Restore
+vi.useRealTimers() // Restore
 ```
+
+v5 fake timers (and `vi.setSystemTime` used without them) also mock `Temporal` when it's on the global object, not just `Date`:
+
+```ts
+vi.setSystemTime(0)
+Temporal.Now.instant().epochMilliseconds // 0
+
+// keep Temporal native:
+vi.useFakeTimers({ toNotFake: ['Temporal'] })
+```
+
+### Auto-advancing and Tick Modes
+
+While fake timers are on, `vi.waitFor`/`vi.waitUntil` advance timers by `interval` before each check, and `expect.poll` advances by `interval` after each failed attempt, so they don't hang. `vi.setTimerTickMode('interval' | 'nextTimerAsync')` makes timers advance by themselves: `interval` steps fake time on a real-time interval (for state with a limited lifetime), `nextTimerAsync` fires the next pending timer after each macrotask (for code that eventually settles).
+
+`vi.setSystemTime` and the `now` option of `vi.useFakeTimers` also accept `Temporal.Instant`/`Temporal.ZonedDateTime`. Set `fakeTimers.fakeNodeBuiltins: true` to also fake `node:timers` and `node:timers/promises`.
 
 ## Mock Globals
 
 ```ts
-vi.stubGlobal(
-  "fetch",
-  vi.fn(() => Promise.resolve({ json: () => ({ data: "mock" }) })),
-);
+vi.stubGlobal('fetch', vi.fn(() => 
+  Promise.resolve({ json: () => ({ data: 'mock' }) })
+))
 
 // Restore
-vi.unstubAllGlobals();
+vi.unstubAllGlobals()
 ```
 
 ## Mock Environment Variables
 
 ```ts
-vi.stubEnv("API_KEY", "test-key");
-expect(import.meta.env.API_KEY).toBe("test-key");
+vi.stubEnv('API_KEY', 'test-key')
+expect(import.meta.env.API_KEY).toBe('test-key')
 
 // Restore
-vi.unstubAllEnvs();
+vi.unstubAllEnvs()
 ```
 
 ## Clearing Mocks
 
 ```ts
-const fn = vi.fn();
-fn();
+const fn = vi.fn()
+fn()
 
-fn.mockClear(); // Clear call history
-fn.mockReset(); // Clear history + implementation
-fn.mockRestore(); // Restore original (for spies)
+fn.mockClear()       // Clear call history
+fn.mockReset()       // Clear history + implementation
+fn.mockRestore()     // Restore original (for spies)
 
 // Global
-vi.clearAllMocks();
-vi.resetAllMocks();
-vi.restoreAllMocks();
+vi.clearAllMocks()
+vi.resetAllMocks()
+vi.restoreAllMocks()
 ```
 
 ## Config Auto-Reset
@@ -276,31 +297,38 @@ vi.restoreAllMocks();
 // vitest.config.ts
 defineConfig({
   test: {
-    clearMocks: true, // Clear before each test
-    mockReset: true, // Reset before each test
-    restoreMocks: true, // Restore after each test
-    unstubEnvs: true, // Restore env vars
+    clearMocks: true,    // Clear call history before each test — v5 DEFAULT
+    mockReset: true,     // Reset before each test
+    restoreMocks: true,  // Restore after each test
+    unstubEnvs: true,    // Restore env vars
     unstubGlobals: true, // Restore globals
   },
-});
+})
 ```
+
+> **v5:** `clearMocks` defaults to `true`, so mock call history no longer leaks between tests. Mocks set up outside the test body (setup files, module top level, `beforeAll`) are most affected — their recorded calls are cleared before the asserting test runs. Set `clearMocks: false` to restore the old behavior.
 
 ## Hoisted Variables for Mocks
 
 ```ts
-const mockFn = vi.hoisted(() => vi.fn());
+const mockFn = vi.hoisted(() => vi.fn())
 
-vi.mock("./module", () => ({
+vi.mock('./module', () => ({
   getData: mockFn,
-}));
+}))
 
-import { getData } from "./module";
+import { getData } from './module'
 
-test("hoisted mock", () => {
-  mockFn.mockReturnValue("test");
-  expect(getData()).toBe("test");
-});
+test('hoisted mock', () => {
+  mockFn.mockReturnValue('test')
+  expect(getData()).toBe('test')
+})
 ```
+
+## v5 Behavior Changes
+
+- **Class mocks keep prototype methods.** `vi.fn(Dog)`, `vi.spyOn(obj, 'Dog')`, and `.mockImplementation(class …)` now chain the mock's `prototype` to the implementation's, so instance methods work and `instanceof Dog` passes. `mockReset` reverts the chain.
+- **Automocked modules stay automocked in the browser** — their exports return `undefined` unless you pass `{ spy: true }` or a factory.
 
 ## v4 Behavior Changes
 
@@ -316,10 +344,12 @@ test("hoisted mock", () => {
 - Use `vi.when` for argument-specific behaviors; `using` for scoped auto-restore
 - Use `{ spy: true }` to keep implementation but track calls
 - `vi.hoisted` lets you reference variables in mock factories
+- Prefer `vi.mock(import('./mod'), factory)` over a string path for type-checked factories
 
-<!--
+<!-- 
 Source references:
 - https://vitest.dev/guide/mocking.html
+- https://vitest.dev/guide/learn/mock-functions
 - https://vitest.dev/api/vi.html
 - https://vitest.dev/guide/recipes/conditional-mocking
 - https://vitest.dev/guide/recipes/explicit-resources
