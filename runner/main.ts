@@ -46,7 +46,12 @@ async function main(): Promise<void> {
 
     try {
       stage = 'JOB_EXECUTION';
-      records = await executeJob(job, browser, request.input);
+      records = await executeJob(
+        job,
+        browser,
+        request.input,
+        request.profile ? directory : undefined,
+      );
     } finally {
       await disconnectBrowser(browser);
     }
