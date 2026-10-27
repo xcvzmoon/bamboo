@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, rm } from 'node:fs/promises';
+import { copyFile, mkdir, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -25,3 +25,4 @@ const { stdout, stderr } = await promisify(execFile)(
 );
 process.stdout.write(stdout);
 process.stderr.write(stderr);
+await copyFile(new URL('../examples/wikipedia/job.ts', import.meta.url), `${output}/example.ts`);
