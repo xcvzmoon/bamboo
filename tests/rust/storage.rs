@@ -623,3 +623,271 @@ fn json_null_and_primitive_job_inputs_round_trip_as_json() -> TestResult {
     }
     Ok(())
 }
+
+#[test]
+fn saved_settings_survive_restart_without_changing_queued_inputs() -> TestResult {
+    let fixture = Fixture::new()?;
+    let job = fixture.job()?;
+    let queued = fixture.storage.queue_run(job.id, &job.input)?;
+    let updated = fixture.storage.save_job_settings(
+        job.id,
+        " Updated job ",
+        &json!({"topic": "Rust"}),
+        120_000,
+    )?;
+    assert_eq!(updated.name, "Updated job");
+    assert_eq!(updated.input, json!({"topic": "Rust"}));
+    assert_eq!(updated.timeout_ms, 120_000);
+    let reopened = Storage::open(&fixture.root)?;
+    assert_eq!(reopened.list_jobs()?, vec![updated]);
+    assert_eq!(reopened.get_run(queued.id)?.job, job);
+    assert!(matches!(
+        reopened.save_job_settings(job.id, "", &json!(null), 1000),
+        Err(StorageError::InvalidInput(_))
+    ));
+    assert!(matches!(
+        reopened.save_job_settings(job.id, "Job", &json!(null), 0),
+        Err(StorageError::InvalidInput(_))
+    ));
+    assert!(matches!(
+        reopened.save_job_settings(Uuid::now_v7(), "Job", &json!(null), 1000),
+        Err(StorageError::NotFound)
+    ));
+    assert_eq!(reopened.get_job(job.id)?.timeout_ms, 120_000);
+    Ok(())
+}
+
+#[test]
+fn startup_recovery_interrupts_unfinished_runs_and_removes_unpublished_results() -> TestResult {
+    let fixture = Fixture::new()?;
+    let job = fixture.job()?;
+    let queued = fixture.storage.queue_run(job.id, &json!(null))?;
+    let running = fixture.storage.queue_run(job.id, &json!(null))?;
+    fixture.storage.start_run(running.id, versions())?;
+    let partial = fixture
+        .root
+        .join("runs")
+        .join(running.id.to_string())
+        .join("results.json");
+    fs::write(&partial, "[{\"partial\":true}]")?;
+    let protocol = fixture.storage.create_protocol_directory(running.id)?;
+    let protocol = protocol.keep();
+    fs::write(protocol.join("request.json"), "{}")?;
+    let reopened = Storage::open(&fixture.root)?;
+    assert_eq!(reopened.recover_unfinished_runs()?, 2);
+    assert!(!partial.exists());
+    assert!(!protocol.exists());
+    for id in [queued.id, running.id] {
+        let run = reopened.get_run(id)?;
+        assert_eq!(run.status, RunStatus::Interrupted);
+        assert_eq!(
+            run.failure.map(|failure| failure.code),
+            Some("RUN_INTERRUPTED".into())
+        );
+        assert!(run.finished_at.is_some());
+        assert!(reopened.read_results(id).is_err());
+    }
+    assert_eq!(reopened.recover_unfinished_runs()?, 0);
+    Ok(())
+}
+
+#[test]
+fn saved_profile_selection_survives_restart_and_is_snapshotted_at_enqueue() -> TestResult {
+    let fixture = Fixture::new()?;
+    let job = fixture.job()?;
+    assert!(job.profile_id.is_none());
+    let profile_id = Uuid::now_v7();
+    fixture.storage.set_job_profile(job.id, Some(profile_id))?;
+    let queued = fixture.storage.queue_run(job.id, &json!(null))?;
+    fixture.storage.set_job_profile(job.id, None)?;
+    let reopened = Storage::open(&fixture.root)?;
+    assert!(reopened.get_job(job.id)?.profile_id.is_none());
+    assert_eq!(
+        reopened.get_run(queued.id)?.job.profile_id,
+        Some(profile_id)
+    );
+    reopened.set_job_profile(job.id, Some(profile_id))?;
+    assert_eq!(
+        Storage::open(&fixture.root)?.list_jobs()?[0].profile_id,
+        Some(profile_id)
+    );
+    Ok(())
+}
+
+fn completed_history_run(
+    fixture: &Fixture,
+    label: &str,
+) -> Result<Run, Box<dyn std::error::Error>> {
+    let job = fixture.storage.list_jobs()?.remove(0);
+    let queued = fixture.storage.queue_run(job.id, &json!({"label":label}))?;
+    fixture.storage.start_run(queued.id, versions())?;
+    Ok(fixture.storage.finish_run(
+        queued.id,
+        RunCompletion::Succeeded(serde_json::from_value(json!([{"label":label}]))?),
+    )?)
+}
+
+#[test]
+fn history_deletion_preserves_jobs_profiles_schedules_and_reports_partial_failures() -> TestResult {
+    let fixture = Fixture::new()?;
+    let job = fixture.job()?;
+    let profile = Uuid::now_v7();
+    let job = fixture.storage.set_job_profile(job.id, Some(profile))?;
+    let schedule = fixture.storage.save_schedule(
+        job.id,
+        app_lib::schedule::Schedule::Disabled,
+        &app_lib::schedule::SystemClock,
+    )?;
+    let first = completed_history_run(&fixture, "first")?;
+    let second = completed_history_run(&fixture, "second")?;
+    let second_directory = fixture.root.join("runs").join(second.id.to_string());
+    fs::remove_dir_all(&second_directory)?;
+    fs::write(&second_directory, "fixture invalid directory")?;
+    let deleted = fixture.storage.delete_history(HistoryTarget::Job(job.id))?;
+    assert_eq!(deleted.deleted, vec![first.id]);
+    assert_eq!(deleted.failed.len(), 1);
+    assert_eq!(deleted.failed[0].run_id, second.id);
+    assert_eq!(deleted.failed[0].code, "HISTORY_FILESYSTEM");
+    assert!(matches!(
+        fixture.storage.get_run(first.id),
+        Err(StorageError::NotFound)
+    ));
+    assert!(fixture.storage.get_run(second.id).is_ok());
+    assert!(
+        !fixture
+            .root
+            .join("runs")
+            .join(first.id.to_string())
+            .exists()
+    );
+    assert_eq!(fixture.storage.get_job(job.id)?, job);
+    assert_eq!(fixture.storage.get_schedule(job.id)?, Some(schedule.saved));
+    fs::remove_file(second_directory)?;
+    assert_eq!(
+        fixture
+            .storage
+            .delete_history(HistoryTarget::Run(second.id))?
+            .deleted,
+        vec![second.id]
+    );
+    let reopened = Storage::open(&fixture.root)?;
+    assert!(reopened.list_runs(job.id, 20, 0)?.is_empty());
+    assert_eq!(reopened.get_job(job.id)?.profile_id, Some(profile));
+    Ok(())
+}
+
+#[test]
+fn deletion_rejects_all_active_work_before_removing_any_history() -> TestResult {
+    let fixture = Fixture::new()?;
+    let job = fixture.job()?;
+    let finished = completed_history_run(&fixture, "keep until idle")?;
+    let active = fixture.storage.queue_run(job.id, &json!(null))?;
+    for target in [HistoryTarget::Run(active.id), HistoryTarget::Job(job.id)] {
+        assert!(matches!(
+            fixture.storage.delete_history(target),
+            Err(StorageError::HistoryActive)
+        ));
+    }
+    fixture.storage.start_run(active.id, versions())?;
+    assert!(matches!(
+        fixture
+            .storage
+            .delete_history(HistoryTarget::Run(active.id)),
+        Err(StorageError::HistoryActive)
+    ));
+    assert!(fixture.storage.read_results(finished.id).is_ok());
+    fixture
+        .storage
+        .finish_run(active.id, RunCompletion::Cancelled)?;
+    assert_eq!(
+        fixture
+            .storage
+            .delete_history(HistoryTarget::Job(job.id))?
+            .deleted
+            .len(),
+        2
+    );
+    assert_eq!(fixture.storage.get_job(job.id)?.id, job.id);
+    Ok(())
+}
+
+#[test]
+fn deletion_retries_after_database_failure_without_following_symlinked_directories() -> TestResult {
+    let fixture = Fixture::new()?;
+    let job = fixture.job()?;
+    let finished = completed_history_run(&fixture, "retry")?;
+    let database = Connection::open(fixture.root.join("bamboo.sqlite3"))?;
+    database.execute_batch("CREATE TRIGGER reject_history_delete BEFORE DELETE ON runs BEGIN SELECT RAISE(ABORT,'fixture deletion failure'); END;")?;
+    let deleted = fixture
+        .storage
+        .delete_history(HistoryTarget::Run(finished.id))?;
+    assert!(deleted.deleted.is_empty());
+    assert_eq!(deleted.failed[0].code, "HISTORY_DATABASE");
+    assert!(fixture.storage.get_run(finished.id).is_ok());
+    assert!(
+        !fixture
+            .root
+            .join("runs")
+            .join(finished.id.to_string())
+            .exists()
+    );
+    database.execute_batch("DROP TRIGGER reject_history_delete")?;
+    assert_eq!(
+        fixture
+            .storage
+            .delete_history(HistoryTarget::Run(finished.id))?
+            .deleted,
+        vec![finished.id]
+    );
+    let linked = completed_history_run(&fixture, "linked")?;
+    let directory = fixture.root.join("runs").join(linked.id.to_string());
+    fs::remove_dir_all(&directory)?;
+    let outside = fixture.root.join("keep outside history");
+    fs::create_dir(&outside)?;
+    fs::write(outside.join("keep.txt"), "preserve")?;
+    std::os::unix::fs::symlink(&outside, &directory)?;
+    let deleted = fixture.storage.delete_history(HistoryTarget::Job(job.id))?;
+    assert_eq!(deleted.failed[0].code, "HISTORY_FILESYSTEM");
+    assert_eq!(fs::read_to_string(outside.join("keep.txt"))?, "preserve");
+    fs::remove_file(directory)?;
+    fixture
+        .storage
+        .delete_history(HistoryTarget::Run(linked.id))?;
+    Ok(())
+}
+
+#[test]
+fn failed_deletion_commit_keeps_metadata_and_explains_that_files_may_be_gone() -> TestResult {
+    let fixture = Fixture::new()?;
+    fixture.job()?;
+    let finished = completed_history_run(&fixture, "commit failure")?;
+    let database = Connection::open(fixture.root.join("bamboo.sqlite3"))?;
+    database.execute_batch("PRAGMA foreign_keys=ON; CREATE TABLE history_refs (run_id TEXT REFERENCES runs(id) DEFERRABLE INITIALLY DEFERRED) STRICT;")?;
+    database.execute(
+        "INSERT INTO history_refs(run_id) VALUES (?1)",
+        [finished.id.to_string()],
+    )?;
+    assert!(matches!(
+        fixture
+            .storage
+            .delete_history(HistoryTarget::Run(finished.id)),
+        Err(StorageError::DeletionCommit(_))
+    ));
+    assert!(fixture.storage.get_run(finished.id).is_ok());
+    assert!(
+        !fixture
+            .root
+            .join("runs")
+            .join(finished.id.to_string())
+            .exists()
+    );
+    database.execute("DELETE FROM history_refs", [])?;
+    assert_eq!(
+        fixture
+            .storage
+            .delete_history(HistoryTarget::Run(finished.id))?
+            .deleted,
+        vec![finished.id]
+    );
+    Ok(())
+}

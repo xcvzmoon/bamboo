@@ -1,9 +1,9 @@
 # Managed run supervisor
 
-`RunSupervisor` owns admission, runtime preflight, Lightpanda and Node processes,
-protocol files, captured logs, and final storage transitions. Tauri manages one
-shared supervisor. A second request while it is busy fails with `RUN_BUSY` before
-creating another queued run. SQLite also prevents two running rows.
+`RunQueue` owns manual admission and dispatches one immutable run snapshot at a
+time to `RunSupervisor`. The supervisor owns runtime preflight, Lightpanda and
+Node processes, protocol files, logs, and final storage transitions. Tauri manages
+one shared queue and supervisor. SQLite also prevents two running rows.
 
 ## Runtime configuration
 
@@ -21,9 +21,16 @@ launcher chooses a runtime based on that directory.
 
 ## Lifecycle
 
-`run_job` accepts a job UUID and JSON input and asynchronously returns the final
-run. It emits `run-updated` with the final run after persistence. Registration and
-frontend run controls belong to the next phase.
+`run_job` accepts a job UUID and JSON input and returns the persisted queued run
+without waiting for completion. The queue captures settings and input on admission,
+then executes requests FIFO with one active run globally. Source is read and hashed
+when execution starts. `queue_snapshot` returns the active run and waiting requests;
+`cancel_run` accepts either an active or waiting run ID. Cancelling waiting work
+persists its terminal state before removing it from the queue.
+
+App exit closes admission, cancels waiting requests, and shuts down active work
+before allowing exit. Startup recovery interrupts unfinished rows. A fresh queue
+never replays requests left by an earlier app process.
 
 Each accepted request persists a queued run and opens its private log files. The
 supervisor checks runtime versions, starts Lightpanda bound to loopback on an
@@ -32,8 +39,8 @@ requests use no proxy and have a 300 ms request timeout. Version commands have a
 three-second timeout and 4096-byte output limit.
 
 Before launching Node, storage marks the run running and records the entry hash
-and versions. A private mode 0700 temporary directory holds the mode 0600 request
-and final outcome. The runner entry comes from app resources; the Node process
+and versions. A private mode 0700 temporary directory under the run's artifact
+directory holds the mode 0600 request and final outcome. The runner entry comes from app resources; the Node process
 starts in the job's project directory. Both runtime programs are launched using
 argv execution without a shell. stdout and stderr go directly to the run's log
 files rather than unbounded in-memory buffers.
@@ -55,15 +62,27 @@ Final state is persisted after cleanup and log-handle closure. Cleanup failures
 prevent success. Start-state database tasks remain owned across timeout/shutdown,
 so finalization waits for an in-flight start transaction. Closing the window
 requests app exit; Tauri defers exit until supervisor shutdown finishes. Repeated
-exit requests cannot bypass that wait. Active runs become interrupted on normal
-shutdown. Forced app termination cannot run shutdown handlers; crash reconciliation
-belongs to the recovery phase.
+exit requests cannot bypass that wait. Normal shutdown cancels active runs with
+`RUN_SHUTDOWN`; user cancellation records `RUN_CANCELLED`, and timeout records
+`RUN_TIMEOUT` as a failure.
+
+Each owned command runs inside the packaged Node process guard. The guard watches
+a pipe held by Rust and kills its process group if that pipe closes unexpectedly,
+including after forced app termination. The guard stays alive during SIGTERM so
+the target has time to exit before Rust escalates to SIGKILL. Deliberately detached
+children and external side effects remain outside this ownership model.
+
+Before admitting any work at startup, storage marks queued/running rows interrupted
+with `RUN_INTERRUPTED`, removes abandoned protocol directories and unpublished
+result files, and preserves logs. No unfinished run is resumed.
 
 ## Packaging
 
 `runner/package.json` defines the runner's private production dependencies.
 `pnpm runner:package` uses frozen-lockfile `pnpm deploy` with a hoisted node linker to stage a self-contained
-package at `src-tauri/resources/runner`. Dependencies use real directories because Tauri resource copying omits dependency
+package at `src-tauri/resources/runner`. Run resource-producing commands (`build`,
+`test`, `cargo:lint`, and `runner:package`) sequentially: packaging replaces the
+staged runner directory, which another build may be reading. Dependencies use real directories because Tauri resource copying omits dependency
 symlinks. Generated resources are ignored by Git.
 The package contains TypeScript entry files, Playwright, Valibot, tsx, and its
 native esbuild helper. It contains no Node executable or browser downloads.

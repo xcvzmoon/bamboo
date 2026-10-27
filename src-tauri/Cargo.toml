@@ -38,6 +38,12 @@ tokio = { version = "1.54.1", features = [
 ] }
 reqwest = { version = "0.13.5", default-features = false, features = ["json"] }
 nix = { version = "0.31.3", features = ["signal", "process"] }
+tauri-plugin-dialog = "2"
+csv = "1"
+aes-gcm = { version = "0.11.1", features = ["zeroize"] }
+keyring = "4.2.0"
+zeroize = "1"
+jiff = "0.2.38"
 
 [[test]]
 name = "storage"
@@ -46,3 +52,11 @@ path = "../tests/rust/storage.rs"
 [[test]]
 name = "runner"
 path = "../tests/rust/runner.rs"
+
+[[test]]
+name = "results"
+path = "../tests/rust/results.rs"
+
+[[test]]
+name = "schedule"
+path = "../tests/rust/schedule.rs"
