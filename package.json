@@ -34,6 +34,7 @@
     "nuxt:typecheck": "nuxt typecheck",
     "add-component": "shadcn-vue add",
     "probe:runtime": "node tools/probes/lightpanda.ts",
+    "probe:session": "node tools/probes/session-transfer.ts",
     "runner:job": "node runner/main.ts",
     "runner:package": "node tools/package-runner.ts"
   },
